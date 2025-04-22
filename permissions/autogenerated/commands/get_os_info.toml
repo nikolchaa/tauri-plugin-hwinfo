@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-os-info"
+description = "Enables the get_os_info command."
+commands.allow = ["get_os_info"]
+
+[[permission]]
+identifier = "deny-os-info"
+description = "Denies the get_os_info command."
+commands.deny = ["get_os_info"]

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-gpu-info"
+description = "Enables the get_gpu_info command."
+commands.allow = ["get_gpu_info"]
+
+[[permission]]
+identifier = "deny-gpu-info"
+description = "Denies the get_gpu_info command."
+commands.deny = ["get_gpu_info"]

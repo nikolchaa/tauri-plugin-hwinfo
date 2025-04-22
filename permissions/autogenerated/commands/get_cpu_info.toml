@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-cpu-info"
+description = "Enables the get_cpu_info command."
+commands.allow = ["get_cpu_info"]
+
+[[permission]]
+identifier = "deny-cpu-info"
+description = "Denies the get_cpu_info command."
+commands.deny = ["get_cpu_info"]

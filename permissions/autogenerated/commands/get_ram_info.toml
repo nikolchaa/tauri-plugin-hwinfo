@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-ram-info"
+description = "Enables the get_ram_info command."
+commands.allow = ["get_ram_info"]
+
+[[permission]]
+identifier = "deny-ram-info"
+description = "Denies the get_ram_info command."
+commands.deny = ["get_ram_info"]
