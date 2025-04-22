@@ -3,7 +3,7 @@
 A cross-platform Tauri plugin to fetch detailed system hardware information from the user's device, including CPU, RAM, GPU, and OS metadata — all accessible through both Rust and JavaScript/TypeScript APIs.
 
 > ⚠️ **Platform Support**: Desktop-only. Mobile support returns placeholder values.
->
+
 > ⚠️ **Testing**: Only Windows is tested and confirmed working so far.
 
 ## 🔧 Features
