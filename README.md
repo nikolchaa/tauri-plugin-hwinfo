@@ -2,10 +2,9 @@
 
 A cross-platform Tauri plugin to fetch detailed system hardware information from the user's device, including CPU, RAM, GPU, and OS metadata — all accessible through both Rust and JavaScript/TypeScript APIs.
 
-> ⚠️ **Platform Support**: Desktop-only. Mobile support returns placeholder values.  
+> ⚠️ **Platform Support**: Desktop-only. Mobile support returns placeholder values.
+>
 > ⚠️ **Testing**: Only Windows is tested and confirmed working so far.
-
----
 
 ## 🔧 Features
 
@@ -15,8 +14,6 @@ A cross-platform Tauri plugin to fetch detailed system hardware information from
 - ✅ OS Info (OS name and version)
 - ✅ Full Tauri v2 permissions support
 - ✅ JS/TS bindings via `@tauri-apps/api/core::invoke`
-
----
 
 ## 📦 Installation
 
@@ -35,8 +32,6 @@ tauri-plugin-hwinfo = "0.1.0"
 [dependencies]
 tauri-plugin-hwinfo = { git = "https://github.com/nikolchaa/tauri-plugin-hwinfo", tag = "0.1.0" }
 ```
-
----
 
 ## 🧰 Usage (Rust Backend)
 
@@ -63,8 +58,6 @@ fn main() {
   ]
 }
 ```
-
----
 
 ## 📜 Frontend API (JS/TS)
 
