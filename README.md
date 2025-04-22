@@ -30,7 +30,7 @@ tauri-plugin-hwinfo = "0.1.0"
 
 ```toml
 [dependencies]
-tauri-plugin-hwinfo = { git = "https://github.com/nikolchaa/tauri-plugin-hwinfo", tag = "0.1.0" }
+tauri-plugin-hwinfo = { git = "https://github.com/nikolchaa/tauri-plugin-hwinfo", tag = "v0.1.0" }
 ```
 
 ## 🧰 Usage (Rust Backend)
