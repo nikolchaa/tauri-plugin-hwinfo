@@ -61,7 +61,11 @@ fn main() {
 
 ## 📜 Frontend API (JS/TS)
 
-Install via NPM (once published), or link locally if using manually.
+Install via NPM, or link locally if using manually.
+
+```sh
+npm i tauri-plugin-hwinfo
+```
 
 ```ts
 import {
