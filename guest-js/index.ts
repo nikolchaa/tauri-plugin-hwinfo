@@ -15,6 +15,8 @@ export interface GpuInfo {
   manufacturer: string;
   model: string;
   vramMb: number;
+  supportsVulkan: boolean;
+  supportsCuda: boolean;
 }
 
 export interface OsInfo {

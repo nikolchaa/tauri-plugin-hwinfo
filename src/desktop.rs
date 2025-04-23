@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::process::Command;
 
 use serde::de::DeserializeOwned;
@@ -175,6 +176,8 @@ impl<R: Runtime> Hwinfo<R> {
                 manufacturer: "Unknown".into(),
                 model: "Unknown".into(),
                 vram_mb: 0,
+                supports_cuda: false,
+                supports_vulkan: false,
             });
         }
 
@@ -204,10 +207,15 @@ impl<R: Runtime> Hwinfo<R> {
             }
         }
 
+        let supports_cuda = manufacturer.contains("NVIDIA") && (model.contains("RTX") || model.contains("GTX"));
+        let supports_vulkan = Path::new("C:\\Windows\\System32\\vulkan-1.dll").exists() || Path::new("C:\\Windows\\SysWOW64\\vulkan-1.dll").exists();
+
         return Ok(GpuInfo {
             manufacturer,
             model,
             vram_mb,
+            supports_cuda,
+            supports_vulkan,
         });
     }
 
@@ -225,7 +233,7 @@ impl<R: Runtime> Hwinfo<R> {
             let parts: Vec<&str> = line.split('"').collect();
             if let Some(name) = parts.get(5) {
               model = name.to_string();
-              if name.contains("AMD") {
+              if name.contains("AMD") || name.contains("Advanced Micro Devices") || name.contains("Radeon") {
                 manufacturer = "Advanced Micro Devices, Inc.".into();
               } else if name.contains("NVIDIA") {
                 manufacturer = "NVIDIA Corporation".into();
@@ -251,10 +259,24 @@ impl<R: Runtime> Hwinfo<R> {
           }
       }
 
+      let supports_cuda = Command::new("which")
+        .arg("nvidia-smi")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+      let supports_vulkan = Command::new("which")
+        .arg("vulkaninfo")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
       return Ok(GpuInfo {
           manufacturer,
           model,
           vram_mb,
+          supports_cuda,
+          supports_vulkan,
       });
     }
 
@@ -290,6 +312,8 @@ impl<R: Runtime> Hwinfo<R> {
         manufacturer,
         model,
         vram_mb,
+        supports_cuda: false,
+        supports_vulkan: false,
       });
     }
 
@@ -298,6 +322,8 @@ impl<R: Runtime> Hwinfo<R> {
       manufacturer: "Unknown".into(),
       model: "Unknown".into(),
       vram_mb: 0,
+      supports_cuda: false,
+      supports_vulkan: false,
     })
   }
 

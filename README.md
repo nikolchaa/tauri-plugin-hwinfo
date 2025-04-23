@@ -10,7 +10,7 @@ A cross-platform Tauri plugin to fetch detailed system hardware information from
 
 - ✅ CPU Info (manufacturer, model, threads, max frequency)
 - ✅ RAM Info (total memory in MB)
-- ✅ GPU Info (model, manufacturer, VRAM in MB)
+- ✅ GPU Info (model, manufacturer, VRAM in MB, CUDA support, Vulkan support)
 - ✅ OS Info (OS name and version)
 - ✅ Full Tauri v2 permissions support
 - ✅ JS/TS bindings via `@tauri-apps/api/core::invoke`
