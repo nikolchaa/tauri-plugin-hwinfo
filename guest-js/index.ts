@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 export interface CpuInfo {
   manufacturer: string;
   model: string;
-  maxFrequencyMhz: number;
+  maxFrequency: number;
   threads: number;
 }
 

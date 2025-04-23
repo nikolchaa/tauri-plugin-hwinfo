@@ -1,8 +1,9 @@
 {
   "name": "tauri-plugin-hwinfo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Nikola Ranđelović <contact@nikolchaa.com>",
   "description": "A cross-platform Tauri plugin to fetch CPU, RAM, GPU, and OS info.",
+  "license": "MIT",
   "type": "module",
   "types": "./dist-js/index.d.ts",
   "main": "./dist-js/index.cjs",
@@ -14,7 +15,17 @@
   },
   "files": [
     "dist-js",
-    "README.md"
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "tauri",
+    "tauri-plugin",
+    "hardware",
+    "cpu",
+    "gpu",
+    "ram",
+    "system-info"
   ],
   "scripts": {
     "build": "rollup -c",
