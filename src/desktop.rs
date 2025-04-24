@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::process::Command;
 
 use serde::de::DeserializeOwned;
@@ -160,55 +159,35 @@ impl<R: Runtime> Hwinfo<R> {
   }
 
   pub async fn gpu_info(&self) -> Result<GpuInfo> {
+
     #[cfg(target_os = "windows")]
     {
-        use std::{fs, env};
+        use std::path::Path;
+        use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory, DXGI_ADAPTER_DESC, IDXGIAdapter, IDXGIFactory};
 
-        let temp_path = env::temp_dir().join("dxdiag_output.txt");
+        let factory: IDXGIFactory = unsafe { CreateDXGIFactory().unwrap() };
+        let adapter: IDXGIAdapter = unsafe { factory.EnumAdapters(0).unwrap() };
 
-        // Generate dxdiag output
-        let status = Command::new("dxdiag")
-            .args(["/t", temp_path.to_str().unwrap()])
-            .status()?;
+        let mut desc = DXGI_ADAPTER_DESC::default();
+        unsafe { adapter.GetDesc(&mut desc).unwrap() };
 
-        if !status.success() {
-            return Ok(GpuInfo {
-                manufacturer: "Unknown".into(),
-                model: "Unknown".into(),
-                vram_mb: 0,
-                supports_cuda: false,
-                supports_vulkan: false,
-            });
-        }
+        let model = String::from_utf16_lossy(&desc.Description)
+            .trim_end_matches(char::from(0))
+            .to_string();
 
-        let contents = fs::read_to_string(&temp_path)?;
+        let vram_mb = (desc.DedicatedVideoMemory / 1024 / 1024) as u64;
 
-        // Clean up the file after reading
-        let _ = fs::remove_file(&temp_path);
+        let manufacturer = match desc.VendorId {
+            0x10DE => "NVIDIA Corporation".to_string(),
+            0x1002 => "Advanced Micro Devices, Inc.".to_string(),
+            0x8086 => "Intel Corporation".to_string(),
+            _ => "Unknown".to_string(),
+        };
 
-        let mut manufacturer = String::new();
-        let mut model = String::new();
-        let mut vram_mb = 0;
-
-        for line in contents.lines() {
-            if line.trim_start().starts_with("Card name:") {
-                model = line.split(':').nth(1).unwrap_or("").trim().to_string();
-            } else if line.trim_start().starts_with("Manufacturer:") {
-                manufacturer = line.split(':').nth(1).unwrap_or("").trim().to_string();
-            } else if line.trim_start().starts_with("Dedicated Memory:") {
-                let value = line.split(':').nth(1).unwrap_or("").trim();
-                if let Some(num_part) = value.split_whitespace().next() {
-                    vram_mb = num_part.replace(',', "").parse::<u64>().unwrap_or(0);
-                }
-            }
-
-            if !manufacturer.is_empty() && !model.is_empty() && vram_mb > 0 {
-                break;
-            }
-        }
-
-        let supports_cuda = manufacturer.contains("NVIDIA") && (model.contains("RTX") || model.contains("GTX"));
-        let supports_vulkan = Path::new("C:\\Windows\\System32\\vulkan-1.dll").exists() || Path::new("C:\\Windows\\SysWOW64\\vulkan-1.dll").exists();
+        let supports_cuda = manufacturer.contains("NVIDIA")
+            && (model.contains("RTX") || model.contains("GTX"));
+        let supports_vulkan = Path::new("C:\\Windows\\System32\\vulkan-1.dll").exists()
+            || Path::new("C:\\Windows\\SysWOW64\\vulkan-1.dll").exists();
 
         return Ok(GpuInfo {
             manufacturer,
@@ -294,18 +273,37 @@ impl<R: Runtime> Hwinfo<R> {
 
       for line in stdout.lines() {
         if line.contains("Chipset Model:") {
-          model = model.replace("(Metal)", "").trim().to_string();
+          model = line
+            .split(':')
+            .nth(1)
+            .unwrap_or("")
+            .replace("(Metal)", "")
+            .trim()
+            .to_string();
         }
-        if line.contains("VRAM") {
-          if let Some(raw) = line.split(':').nth(1) {
-            let v = raw.trim().replace("GB", "").replace("MB", "").trim().to_string();
-            if v.contains('.') {
-              vram_mb = (v.parse::<f32>().unwrap_or(0.0) * 1024.0) as u64;
+
+        if line.trim_start().starts_with("VRAM") {
+          if let Some((_, value)) = line.split_once(':') {
+            let clean = value
+              .trim()
+              .replace("GB", "")
+              .replace("MB", "")
+              .trim()
+              .to_string();
+
+            if clean.contains('.') {
+              vram_mb = (clean.parse::<f32>().unwrap_or(0.0) * 1024.0) as u64;
             } else {
-              vram_mb = v.parse::<u64>().unwrap_or(0);
+              vram_mb = clean.parse::<u64>().unwrap_or(0);
             }
           }
         }
+      }
+
+      if vram_mb == 0 {
+        let mut sys = System::new_all();
+        sys.refresh_memory();
+        sys.total_memory() / 1024 / 1024; // from B to KB to MB
       }
 
       return Ok(GpuInfo {

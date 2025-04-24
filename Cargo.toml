@@ -1,6 +1,6 @@
 [package]
 name = "tauri-plugin-hwinfo"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 authors = ["Nikola Ranđelović <contact@nikolchaa.com>"]
 description = "A cross-platform Tauri plugin to fetch CPU, RAM, GPU, and OS info."
@@ -21,6 +21,12 @@ serde = { version = "1.0", features = ["derive"] }
 thiserror = "2"
 sysinfo = "0.34.2"
 os_info = "3.10.0"
+windows = { version = "0.54", features = [
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Direct3D11",
+  "Win32_System_SystemServices",
+  "Win32_Foundation",
+] }
 
 [build-dependencies]
 tauri-plugin = { version = "2.2.0", features = ["build"] }
