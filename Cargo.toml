@@ -13,7 +13,7 @@ keywords = ["tauri", "plugin", "hardware", "system", "diagnostics"]
 categories = ["development-tools", "os", "hardware-support"]
 rust-version = "1.77.2"
 links = "tauri-plugin-hwinfo"
-exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules", "/target"]
+exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules", "/target", "/.github"]
 
 [dependencies]
 tauri = { version = "2.5.0" }

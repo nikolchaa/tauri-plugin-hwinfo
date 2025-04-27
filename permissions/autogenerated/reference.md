@@ -1,4 +1,3 @@
-
 ## Permission Table
 
 <table>
@@ -6,7 +5,6 @@
 <th>Identifier</th>
 <th>Description</th>
 </tr>
-
 
 <tr>
 <td>
@@ -108,32 +106,6 @@ Enables the get_ram_info command.
 <td>
 
 Denies the get_ram_info command.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`hwinfo:allow-ping`
-
-</td>
-<td>
-
-Enables the ping command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`hwinfo:deny-ping`
-
-</td>
-<td>
-
-Denies the ping command without any pre-configured scope.
 
 </td>
 </tr>
