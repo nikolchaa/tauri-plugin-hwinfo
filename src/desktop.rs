@@ -7,6 +7,9 @@ use sysinfo::System;
 use crate::models::*;
 use crate::Result;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 pub fn init<R: Runtime, C: DeserializeOwned>(
   app: &AppHandle<R>,
   _api: PluginApi<R, C>,
@@ -68,12 +71,13 @@ impl<R: Runtime> Hwinfo<R> {
     #[cfg(target_os = "windows")]
     {
         let output = Command::new("wmic")
-            .args([
-                "cpu",
-                "get",
-                "Name,NumberOfLogicalProcessors,MaxClockSpeed,Manufacturer",
-            ])
-            .output()?;
+          .args([
+              "cpu",
+              "get",
+              "Name,NumberOfLogicalProcessors,MaxClockSpeed,Manufacturer",
+          ])
+          .creation_flags(0x08000000)
+          .output()?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
@@ -303,7 +307,7 @@ impl<R: Runtime> Hwinfo<R> {
       if vram_mb == 0 {
         let mut sys = System::new_all();
         sys.refresh_memory();
-        sys.total_memory() / 1024 / 1024; // from B to KB to MB
+        vram_mb = sys.total_memory() / 1024 / 1024;
       }
 
       return Ok(GpuInfo {
