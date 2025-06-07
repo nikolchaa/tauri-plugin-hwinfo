@@ -3,7 +3,8 @@ name: Release
 on:
   push:
     tags:
-      - "v*.*.*" # Only trigger when pushing a tag like v0.2.0
+      - "v*.*.*" # Trigger on version tag
+  workflow_dispatch: # Allow manual triggering from GitHub UI
 
 jobs:
   publish:
