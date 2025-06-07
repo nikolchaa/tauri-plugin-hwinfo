@@ -8,16 +8,16 @@ on:
 
 jobs:
   publish:
-    name: Publish to crates.io and npm
+    name: Publish to npm
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
+      # - name: Set up Rust
+      #   uses: actions-rust-lang/setup-rust-toolchain@v1
+      #   with:
+      #     toolchain: stable
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -34,10 +34,10 @@ jobs:
             libwebkit2gtk-4.1-dev \
             pkg-config
 
-      - name: Publish to crates.io
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-        run: cargo publish --token $CARGO_REGISTRY_TOKEN
+      # - name: Publish to crates.io
+      #   env:
+      #     CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+      #   run: cargo publish --token $CARGO_REGISTRY_TOKEN
 
       - name: Install pnpm
         run: npm install -g pnpm
