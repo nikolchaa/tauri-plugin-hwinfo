@@ -60,7 +60,7 @@ impl<R: Runtime> Hwinfo<R> {
             }
         }
 
-        Ok(CpuInfo {
+        return Ok(CpuInfo {
             manufacturer,
             model,
             max_frequency: max_freq,
@@ -129,7 +129,7 @@ impl<R: Runtime> Hwinfo<R> {
             }
         }
 
-        Ok(CpuInfo {
+        return Ok(CpuInfo {
             manufacturer,
             model,
             max_frequency: max_freq,
