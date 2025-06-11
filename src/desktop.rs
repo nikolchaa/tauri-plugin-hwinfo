@@ -60,55 +60,46 @@ impl<R: Runtime> Hwinfo<R> {
             }
         }
 
-        return Ok(CpuInfo {
+        Ok(CpuInfo {
             manufacturer,
             model,
             max_frequency: max_freq,
             threads,
-        });
+        })
     }
 
     #[cfg(target_os = "windows")]
     {
-        let output = Command::new("wmic")
-          .args([
-              "cpu",
-              "get",
-              "Name,NumberOfLogicalProcessors,MaxClockSpeed,Manufacturer",
-          ])
-          .creation_flags(0x08000000)
-          .output()?;
+        let output = Command::new("powershell")
+        .args([
+            "-Command",
+            "Get-CimInstance Win32_Processor | Select-Object Name, NumberOfLogicalProcessors, MaxClockSpeed, Manufacturer | ConvertTo-Json -Compress",
+        ])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .output()?;
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
+      let stdout = String::from_utf8_lossy(&output.stdout);
+      let json: serde_json::Value = serde_json::from_str(&stdout)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-        if lines.len() >= 2 {
-            let values = lines[1];
-            let fields: Vec<&str> = values.split_whitespace().collect();
-
-            let manufacturer = fields.get(0).unwrap_or(&"Unknown").to_string();
-            let max_freq = fields.get(1).unwrap_or(&"0").parse().unwrap_or(0);
-
-            // Name can be multiple words; slice between 2 and last (excluding thread count)
-            let model_slice = &fields[2..fields.len().saturating_sub(1)];
-            let model = model_slice.join(" ");
-
-            let threads = fields.last().unwrap_or(&"0").parse().unwrap_or(0);
-
-            return Ok(CpuInfo {
-                manufacturer,
-                model,
-                max_frequency: max_freq,
-                threads,
-            });
-        }
-
-        return Ok(CpuInfo {
-            manufacturer: "Unknown".into(),
-            model: "Unknown".into(),
-            max_frequency: 0,
-            threads: 0,
-        });
+      return Ok(CpuInfo {
+      manufacturer: json["Manufacturer"]
+          .as_str()
+          .unwrap_or("Unknown")
+          .trim()
+          .to_string(),
+      model: json["Name"]
+          .as_str()
+          .unwrap_or("Unknown")
+          .trim()
+          .to_string(),
+      max_frequency: json["MaxClockSpeed"]
+          .as_u64()
+          .unwrap_or(0) as u32,
+      threads: json["NumberOfLogicalProcessors"]
+          .as_u64()
+          .unwrap_or(0) as usize,
+      });
     }
 
     #[cfg(target_os = "macos")]
@@ -138,12 +129,12 @@ impl<R: Runtime> Hwinfo<R> {
             }
         }
 
-        return Ok(CpuInfo {
+        Ok(CpuInfo {
             manufacturer,
             model,
             max_frequency: max_freq,
             threads,
-        });
+        })
     }
 
     #[allow(unreachable_code)]
