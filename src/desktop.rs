@@ -195,64 +195,124 @@ impl<R: Runtime> Hwinfo<R> {
 
     #[cfg(target_os = "linux")]
     {
-      let mut manufacturer = String::from("Unknown");
-      let mut model = String::from("Unknown");
-      let mut vram_mb = 0;
+        let mut manufacturer = "Unknown".to_string();
+        let mut model = "Unknown".to_string();
+        let mut vram_mb = 0;
 
-      // Get GPU model from lspci
-      if let Ok(output) = Command::new("lspci").arg("-mm").output() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.lines() {
-          if line.to_lowercase().contains("vga compatible controller") {
-            let parts: Vec<&str> = line.split('"').collect();
-            if let Some(name) = parts.get(5) {
-              model = name.to_string();
-              if name.contains("AMD") || name.contains("Advanced Micro Devices") || name.contains("Radeon") {
-                manufacturer = "Advanced Micro Devices, Inc.".into();
-              } else if name.contains("NVIDIA") {
-                manufacturer = "NVIDIA Corporation".into();
-              } else if name.contains("Intel") {
-                manufacturer = "Intel Corporation".into();
-              }
-            } else {
-              break;
+        // Extract model and vendor using lspci
+        if let Ok(output) = Command::new("lspci").arg("-mm").output() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if line.to_lowercase().contains("vga compatible controller") {
+                    let parts: Vec<&str> = line.split('"').collect();
+                    if let Some(name) = parts.get(5) {
+                        model = name.to_string();
+                        if name.contains("AMD") || name.contains("Advanced Micro Devices") || name.contains("Radeon") {
+                            manufacturer = "Advanced Micro Devices, Inc.".into();
+                        } else if name.contains("NVIDIA") {
+                            manufacturer = "NVIDIA Corporation".into();
+                        } else if name.contains("Intel") {
+                            manufacturer = "Intel Corporation".into();
+                        }
+                    }
+                }
             }
-          }
         }
-      }
 
-      // Get VRAM size from glxinfo
-      if let Ok(output) = Command::new("glxinfo").arg("-B").output() {
-          let stdout = String::from_utf8_lossy(&output.stdout);
-          for line in stdout.lines() {
-              if line.contains("Video memory") || line.contains("Video memory:") {
-                  if let Some(num_part) = line.split_whitespace().last() {
-                      vram_mb = num_part.parse::<u64>().unwrap_or(0);
-                  }
-              }
-          }
-      }
+        // Detect AMD VRAM from sysfs
+        if vram_mb == 0 && manufacturer.contains("AMD") {
+            if let Ok(content) = std::fs::read_to_string("/sys/class/drm/card0/device/mem_info_vram_total") {
+                if let Ok(bytes) = content.trim().parse::<u64>() {
+                    vram_mb = bytes / 1024 / 1024;
+                }
+            }
+        }
 
-      let supports_cuda = Command::new("which")
-        .arg("nvidia-smi")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+        // Detect NVIDIA VRAM from nvidia-smi
+        if vram_mb == 0 && manufacturer.contains("NVIDIA") {
+            if let Ok(output) = Command::new("nvidia-smi")
+                .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
+                .output()
+            {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    if let Some(line) = stdout.lines().next() {
+                        vram_mb = line.trim().parse::<u64>().unwrap_or(0);
+                    }
+                }
+            }
+        }
 
-      let supports_vulkan = Command::new("which")
-        .arg("vulkaninfo")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+        // Try Intel and general fallback via lshw
+        if vram_mb == 0 {
+            if let Ok(output) = Command::new("lshw").args(["-C", "display"]).output() {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    for line in stdout.lines() {
+                        if line.to_lowercase().contains("size:") && line.contains("MB") {
+                            if let Some(size) = line.split(':').nth(1) {
+                                if let Some(num) = size.trim().split_whitespace().next() {
+                                    vram_mb = num.parse::<u64>().unwrap_or(0);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
-      return Ok(GpuInfo {
-          manufacturer,
-          model,
-          vram_mb,
-          supports_cuda,
-          supports_vulkan,
-      });
+        // Final fallback: glxinfo parsing (surprisingly reliable)
+        if vram_mb == 0 {
+            if let Ok(output) = Command::new("glxinfo").arg("-B").output() {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    for line in stdout.lines() {
+                        if line.contains("Video memory:") {
+                            if let Some(value) = line.split(':').nth(1) {
+                                let mem = value.trim().replace("MB", "").trim().to_string();
+                                vram_mb = mem.parse::<u64>().unwrap_or(0);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // CUDA support: only if nvidia-smi succeeds
+        let supports_cuda = Command::new("nvidia-smi")
+            .arg("--query-gpu=name")
+            .arg("--format=csv,noheader")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        // Vulkan support: ldconfig + ICD presence check
+        let supports_vulkan = {
+            let ldconfig_ok = Command::new("sh")
+                .arg("-c")
+                .arg("ldconfig -p | grep -q libvulkan.so")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+
+            let icd_present = std::path::Path::new("/etc/vulkan/icd.d").exists()
+                || std::path::Path::new("/usr/share/vulkan/icd.d").exists();
+
+            ldconfig_ok && icd_present
+        };
+
+        return Ok(GpuInfo {
+            manufacturer,
+            model,
+            vram_mb,
+            supports_cuda,
+            supports_vulkan,
+        });
     }
+
+
 
     #[cfg(target_os = "macos")]
     {
