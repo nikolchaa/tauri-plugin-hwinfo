@@ -1,8 +1,8 @@
 {
   "name": "tauri-plugin-hwinfo",
-  "version": "0.2.3",
+  "version": "2.0.0",
   "author": "Nikola Ranđelović <contact@nikolchaa.com>",
-  "description": "A cross-platform Tauri plugin to fetch CPU, RAM, GPU, and OS info.",
+  "description": "A cross-platform Tauri plugin for deep hardware and system inspection: CPU, GPU, memory, storage, network, displays, batteries, motherboard and OS.",
   "license": "MIT",
   "type": "module",
   "types": "./dist-js/index.d.ts",
@@ -25,6 +25,10 @@
     "cpu",
     "gpu",
     "ram",
+    "storage",
+    "display",
+    "battery",
+    "smbios",
     "system-info"
   ],
   "scripts": {

@@ -1,0 +1,25 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = """
+Allows every hardware section to be read.
+
+Scans run in safe mode unless the application explicitly opted in with
+`Builder::new().allow_unsafe_scan(true)`, so this permission alone never
+exposes serial numbers, MAC addresses or machine identifiers.
+
+Grant the individual `allow-get-*-info` permissions instead if the frontend
+only needs part of the inventory.
+"""
+permissions = [
+    "allow-get-system-info",
+    "allow-get-cpu-info",
+    "allow-get-gpu-info",
+    "allow-get-memory-info",
+    "allow-get-storage-info",
+    "allow-get-network-info",
+    "allow-get-display-info",
+    "allow-get-battery-info",
+    "allow-get-board-info",
+    "allow-get-os-info",
+]
