@@ -141,6 +141,11 @@ pub fn os(ctx: &mut Ctx) -> OsNative {
     imp::os(ctx)
 }
 
+/// The AMD HIP/ROCm installation, if there is one.
+pub fn hip(ctx: &mut Ctx) -> crate::scan::compute::Hip {
+    imp::hip(ctx)
+}
+
 /// Resolve a PCI vendor ID to the name the vendor uses in its own drivers.
 pub fn pci_vendor_name(vendor_id: u32) -> Option<&'static str> {
     Some(match vendor_id {

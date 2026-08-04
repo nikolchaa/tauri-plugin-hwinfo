@@ -24,6 +24,8 @@ pub fn collect(ctx: &mut Ctx, vulkan: &[VulkanDevice]) -> Vec<Gpu> {
     let _ = vulkan;
 
     nvidia_smi(ctx, &mut gpus);
+    apply_hip(ctx, &mut gpus);
+    apply_opencl(ctx, &mut gpus);
 
     if gpus.is_empty() {
         ctx.warn("gpu: no display adapters could be enumerated");
@@ -177,6 +179,71 @@ fn nvidia_smi(ctx: &mut Ctx, gpus: &mut [Gpu]) {
     }
 }
 
+/// Mark AMD adapters with what the HIP/ROCm stack knows about them.
+fn apply_hip(ctx: &mut Ctx, gpus: &mut [Gpu]) {
+    if !ctx.wants(DetailLevel::Capabilities) {
+        return;
+    }
+    // 0x1002 is the graphics vendor ID; 0x1022 is the chipset one, which some
+    // integrated parts report.
+    if !gpus
+        .iter()
+        .any(|g| matches!(g.vendor_id, Some(0x1002 | 0x1022)))
+    {
+        return;
+    }
+
+    let hip = super::compute::hip(ctx);
+
+    for gpu in gpus
+        .iter_mut()
+        .filter(|g| matches!(g.vendor_id, Some(0x1002 | 0x1022)))
+    {
+        // Match on PCI address where the kernel gave us one; otherwise fall
+        // back to the single-device case, which covers almost every desktop.
+        let device = gpu
+            .pci_bus
+            .as_ref()
+            .and_then(|bus| {
+                hip.devices
+                    .iter()
+                    .find(|d| d.pci_bus.as_deref().is_some_and(|b| b.eq_ignore_ascii_case(bus)))
+            })
+            .or_else(|| (hip.devices.len() == 1).then(|| &hip.devices[0]));
+
+        // An adapter the kernel driver does not expose as a compute agent
+        // cannot run HIP even when the runtime is installed.
+        let visible = device.is_some() || (hip.devices.is_empty() && hip.runtime_present);
+
+        gpu.api.hip = hip.runtime_present && visible;
+        gpu.api.hip_version = hip.hip_version.clone();
+        gpu.api.rocm_version = hip.rocm_version.clone();
+        gpu.api.gfx_architecture = device.and_then(|d| d.gfx_architecture.clone());
+
+        // The kernel driver's name is often better than what sysfs alone gave.
+        if let Some(name) = device.and_then(|d| d.name.as_ref()) {
+            if gpu.model.starts_with("Device 0x") {
+                gpu.model = name.clone();
+            }
+        }
+    }
+}
+
+/// OpenCL is a system-wide capability rather than a per-adapter one — the ICD
+/// loader reports platforms, not devices — so every adapter gets the same
+/// answer.
+fn apply_opencl(ctx: &mut Ctx, gpus: &mut [Gpu]) {
+    if !ctx.wants(DetailLevel::Capabilities) || gpus.is_empty() {
+        return;
+    }
+
+    let opencl = super::compute::opencl(ctx);
+    for gpu in gpus.iter_mut() {
+        gpu.api.opencl = opencl.available;
+        gpu.api.opencl_version = opencl.version.clone();
+    }
+}
+
 /// The CUDA runtime version is a header line rather than a queryable field.
 fn nvidia_cuda_version() -> Option<String> {
     let output = sys::util::run("nvidia-smi", &[]).ok()?;
@@ -202,7 +269,13 @@ pub(crate) fn blank_gpu(manufacturer: String, model: String) -> Gpu {
         driver_date: None,
         pci_bus: None,
         current_resolution: None,
-        api: GpuApiSupport::default(),
+        api: GpuApiSupport {
+            // Metal is the one API whose availability follows from the target
+            // rather than a probe: every Mac that can run a Tauri app has it,
+            // and nothing else ever does.
+            metal: cfg!(target_os = "macos"),
+            ..GpuApiSupport::default()
+        },
         uuid: None,
     }
 }

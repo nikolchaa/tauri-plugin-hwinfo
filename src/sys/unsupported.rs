@@ -64,3 +64,9 @@ pub fn os(ctx: &mut Ctx) -> OsNative {
     unsupported(ctx, "os");
     OsNative::default()
 }
+
+pub fn hip(_ctx: &mut Ctx) -> crate::scan::compute::Hip {
+    // ROCm targets Linux and Windows only; its absence elsewhere is expected
+    // rather than a failed probe, so this stays quiet.
+    crate::scan::compute::Hip::default()
+}

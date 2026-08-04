@@ -12,6 +12,10 @@ TypeScript.
 
 Get the whole machine in one call, or just the section you need.
 
+📖 **[Full contract reference](docs/CONTRACT.md)** — every field, its type, the
+detail level and scan mode it needs, and which platforms populate it.
+📋 **[Changelog](CHANGELOG.md)** — what changed in 1.0, and why.
+
 ```ts
 import { getSystemInfo, getCpuInfo } from "tauri-plugin-hwinfo";
 
@@ -24,7 +28,7 @@ const cpus = await getCpuInfo();
 | Section     | Highlights                                                                                                                                                                                              |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cpu[]`     | Per package: vendor, model, socket, physical cores, threads, base/max/current clock, L1–L3 cache, family/model/stepping, microcode, ISA extensions, virtualisation, hypervisor, per-core load and clock |
-| `gpu[]`     | Every adapter: vendor and device IDs, discrete/integrated/virtual/software class, VRAM and shared memory, driver version and date, PCI address, plus Vulkan / CUDA / Direct3D / Metal / OpenCL support  |
+| `gpu[]`     | Every adapter: vendor and device IDs, discrete/integrated/virtual/software class, VRAM and shared memory, driver version and date, PCI address, plus Vulkan / CUDA / HIP-ROCm / Direct3D / Metal / OpenCL support with versions and `gfx` architecture |
 | `memory`    | Totals and swap, plus a physical DIMM inventory: slot, bank, manufacturer, part number, capacity, rated and configured speed, DDR generation, form factor, voltage, widths                              |
 | `storage`   | Physical disks (model, SSD/HDD, bus, size, firmware, partitions) and mounted volumes (filesystem, capacity, free space)                                                                                 |
 | `network[]` | Per interface: description, operational state, MTU, link speed, byte/packet/error counters                                                                                                              |
@@ -34,7 +38,8 @@ const cpus = await getCpuInfo();
 | `os`        | Name, version, build, edition, codename, kernel, architecture, uptime, boot time, detected hypervisor                                                                                                   |
 
 Anything that could not be read is `null` - never `0` or `"Unknown"` - and the
-reason lands in `scan.warnings`.
+reason lands in `scan.warnings`. Every field is catalogued in the
+[contract reference](docs/CONTRACT.md).
 
 ## ⚡ Detail levels
 
@@ -43,13 +48,17 @@ spread evenly. `detail` picks how hard the plugin works:
 
 | Level          | Adds                                                                                                                                                      | Cost\*  |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `summary`      | Whatever is essentially free: CPUID, registry and `/sys`, firmware tables, totals. No helper processes, no device probes, no sampling delay. **Default.** | ~370 ms |
-| `capabilities` | Device probes: Vulkan enumeration, CUDA via `nvidia-smi`. Answers _what can this machine run_.                                                            | ~780 ms |
-| `full`         | Itemised inventory and live state: per-core breakdowns, memory modules, physical disks, adapter models, CPU load, Direct3D feature levels.                | ~2.7 s  |
+| `summary`      | Whatever is essentially free: CPUID, registry and `/sys`, firmware tables, totals. No helper processes, no device probes, no sampling delay. **Default.** | 1×     |
+| `capabilities` | Device probes: Vulkan, CUDA, HIP, OpenCL. Answers _what can this machine run_.                                                                            | ~1.5×  |
+| `full`         | Itemised inventory and live state: per-core breakdowns, memory modules, physical disks, adapter models, CPU load, Direct3D feature levels.                | ~4×    |
 
-\* Whole-machine scan on a Core i7-13620H laptop with a hybrid Intel/NVIDIA
-setup. Your numbers will differ - a desktop with no dGPU to wake is far
-quicker. Combine with `sections` to cut it further.
+\* Relative to `summary`, measured on a Core i7-13620H laptop with hybrid
+Intel/NVIDIA graphics. The ratio is the stable part: absolute times swing
+several-fold depending on whether the platform's data providers are already
+warm — on Windows a `summary` scan ranged from ~250 ms to ~2 s across runs on
+the same machine, purely from WMI cold-start. Measure on your own hardware
+rather than trusting a single number, and combine with `sections` to cut it
+further.
 
 ```ts
 // "Can this machine run local inference?" - the capability question.
@@ -57,7 +66,14 @@ const { gpu, cpu } = await getSystemInfo({
   detail: "capabilities",
   sections: ["cpu", "gpu"],
 });
-const canAccelerate = gpu!.some((g) => g.api.cuda || g.api.vulkan);
+const backend =
+  gpu!.find((g) => g.api.cuda) ?? // NVIDIA
+  gpu!.find((g) => g.api.hip) ?? // AMD, via ROCm
+  gpu!.find((g) => g.api.metal) ?? // Apple
+  gpu!.find((g) => g.api.vulkan); // universal fallback
+
+// ROCm's officially supported list is narrow; the gfx target is what decides.
+const gfx = backend?.api.gfxArchitecture; // "gfx1100"
 const hasAvx2 = cpu![0].features.includes("AVX2");
 ```
 
@@ -65,7 +81,7 @@ What each level gates, precisely:
 
 | Field                                                   | Requires       |
 | ------------------------------------------------------- | -------------- |
-| `gpu[].api.vulkan*`, `cuda*`, `computeCapability`       | `capabilities` |
+| `gpu[].api` probes: `vulkan*`, `cuda*`, `hip*`, `gfxArchitecture`, `opencl*` | `capabilities` |
 | `cpu[].cores`, `usagePercent`, `temperatureC`           | `full`         |
 | `memory.modules` (but **not** `slotsTotal`/`slotsUsed`) | `full`         |
 | `storage.disks` (but **not** `volumes`)                 | `full`         |
@@ -77,9 +93,9 @@ Two things worth knowing:
 - `scan.detail` is echoed back in the response, so a `null` from _"you didn't
   ask"_ is always distinguishable from a `null` from _"it failed"_ - the latter
   is the one explained in `scan.warnings`.
-- Below `capabilities`, `gpu[].api.vulkan` and `cuda` read `false` meaning
-  **not probed**, not _not supported_. Check `scan.detail` before treating a
-  `false` as a real answer.
+- Below `capabilities`, the `gpu[].api` booleans read `false` meaning **not
+  probed**, not _not supported_. Check `scan.detail` before treating a `false`
+  as a real answer.
 
 ## 🔐 Safe and unsafe scans
 
@@ -194,7 +210,7 @@ their payload directly.
 ```jsonc
 {
   "scan": {
-    "version": 2,
+    "version": 1,
     "mode": "safe",
     "detail": "full",
     "sections": ["cpu", "gpu", "memory", "..."],
@@ -291,6 +307,7 @@ cargo run --example dump -- full unsafe
 | --------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `vulkan`  | on      | Enumerates GPUs through the Vulkan loader, adding driver versions, device classes and true heap sizes on all platforms. Loaded at runtime - no SDK needed to build, and absent Vulkan just produces a warning. |
 | `battery` | on      | Battery and power-supply reporting.                                                                                                                                                                            |
+| `opencl`  | on      | Asks the OpenCL ICD loader whether any platform is actually registered. Loaded at runtime; nothing links against OpenCL at build time.                                                                          |
 
 ## 🖥️ Platform notes
 
@@ -298,23 +315,28 @@ cargo run --example dump -- full unsafe
   and no console flashes. VRAM comes from DXGI rather than
   `Win32_VideoController::AdapterRAM`, which is a `uint32` and wraps for any
   adapter with 4 GiB or more.
-- **Linux** - Everything comes from `/proc`, `/sys` and `/etc`; `lspci`,
-  `dmidecode` and `systemd-detect-virt` are optional and only add detail. DMI
-  serials and the per-DIMM inventory are root-only, and say so in
-  `scan.warnings`.
-- **macOS** - `sysctl` for the CPU, `system_profiler -json` for the rest, each
-  data type fetched once per scan. Apple silicon has no DIMM slots and no
-  discrete GPU, so those fields are `null` because the hardware has no such
-  thing.
+- **Linux** - No helper binaries at all. SMBIOS is parsed directly out of
+  `/sys/firmware/dmi/entries` rather than by shelling to `dmidecode`, device
+  names come from the same `pci.ids` database `lspci` reads, virtualisation and
+  container detection run off `/proc` and `/sys`, and HIP/ROCm comes from the
+  `amdkfd` topology. The SMBIOS tables are mode `0400`, so DMI serials and the
+  per-DIMM inventory still need root - and say so in `scan.warnings`.
+- **macOS** - `sysctlbyname` for the CPU, Core Graphics for displays, `hw.model`
+  for the machine identity: the sections that run at every detail level spawn
+  nothing. `system_profiler` remains only for `full`-tier inventory that has no
+  public API - memory modules, physical disks, the GPU list - and for the
+  hardware UUID in unsafe mode. Apple silicon has no DIMM slots and no discrete
+  GPU, so those fields are `null` because the hardware has no such thing.
 - **Mobile** - Android and iOS get the portable subset (CPU, memory, storage,
   network, OS) with a warning naming what is missing, instead of the placeholder
-  values v1 returned.
+  values v1 returned. Shipping to the iOS App Store additionally needs
+  `sysinfo`'s `apple-app-store` feature, which is not wired up here yet.
 
 `maxFrequency` deserves a note: no OS reliably publishes a turbo ceiling -
 Windows and CPUID both hand back the base clock - so it reports the highest
 figure either advertised or actually observed during the scan.
 
-## ⬆️ Migrating from 1.x / 0.x
+## ⬆️ Migrating from 0.x
 
 The contract changed. The old flat, single-device shapes are gone.
 

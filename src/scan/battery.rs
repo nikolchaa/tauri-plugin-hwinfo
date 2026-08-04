@@ -7,7 +7,12 @@ use crate::models::*;
 
 #[cfg(not(all(
     feature = "battery",
-    any(target_os = "windows", target_os = "linux", target_os = "macos")
+    any(
+        target_os = "windows",
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "ios"
+    )
 )))]
 pub fn collect(ctx: &mut Ctx) -> Vec<Battery> {
     #[cfg(feature = "battery")]
@@ -23,7 +28,12 @@ pub fn collect(ctx: &mut Ctx) -> Vec<Battery> {
 
 #[cfg(all(
     feature = "battery",
-    any(target_os = "windows", target_os = "linux", target_os = "macos")
+    any(
+        target_os = "windows",
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "ios"
+    )
 ))]
 pub fn collect(ctx: &mut Ctx) -> Vec<Battery> {
     use starship_battery::units::{

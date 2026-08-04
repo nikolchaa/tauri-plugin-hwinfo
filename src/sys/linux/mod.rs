@@ -11,12 +11,13 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use super::util::{read_trimmed, read_u64, run, value_after_colon};
+use super::util::{read_trimmed, read_u64};
 use super::{CpuNative, DisplayNative, MemoryNative, NetNative, OsNative};
 use crate::models::*;
 use crate::scan::gpu::blank_gpu;
 use crate::scan::{clean, to_mb, Ctx};
 
+mod dmi;
 mod edid;
 
 const DMI: &str = "/sys/class/dmi/id";
@@ -54,9 +55,11 @@ pub fn cpu(ctx: &mut Ctx) -> Vec<CpuNative> {
     }
 
     let cache = cache_sizes();
-    // Another root-only `dmidecode` call, for one cosmetic string.
-    let sockets = if ctx.wants(DetailLevel::Full) {
-        dmidecode_sockets(ctx)
+    // SMBIOS type 4 describes each package directly, rather than being
+    // inferred from the per-thread blocks in /proc/cpuinfo. It is root-only,
+    // so it enriches rather than replaces.
+    let firmware = if ctx.wants(DetailLevel::Full) {
+        firmware_processors(ctx)
     } else {
         Vec::new()
     };
@@ -66,15 +69,27 @@ pub fn cpu(ctx: &mut Ctx) -> Vec<CpuNative> {
         .enumerate()
         .map(|(index, Package { block, .. })| {
             let flags = block.get("flags").map(String::as_str).unwrap_or_default();
+            let firmware = firmware.get(index);
 
             CpuNative {
                 manufacturer: block.get("vendor_id").and_then(clean),
                 model: block.get("model name").and_then(clean),
-                socket: sockets.get(index).cloned(),
-                physical_cores: block.get("cpu cores").and_then(|v| v.parse().ok()),
-                threads: block.get("siblings").and_then(|v| v.parse().ok()),
+                socket: firmware.and_then(|p| p.socket.clone()),
+                physical_cores: block
+                    .get("cpu cores")
+                    .and_then(|v| v.parse().ok())
+                    .or_else(|| firmware.and_then(|p| p.core_count)),
+                threads: block
+                    .get("siblings")
+                    .and_then(|v| v.parse().ok())
+                    .or_else(|| firmware.and_then(|p| p.thread_count)),
                 base_frequency: read_khz(&format!("{CPU_ROOT}/cpu0/cpufreq/base_frequency")),
-                max_frequency: max_frequency(),
+                // cpufreq knows the governor's ceiling; firmware knows the
+                // rated turbo, which is usually the higher and truer figure.
+                max_frequency: max_frequency()
+                    .into_iter()
+                    .chain(firmware.and_then(|p| p.max_speed_mhz))
+                    .max(),
                 current_frequency: block
                     .get("cpu MHz")
                     .and_then(|v| v.parse::<f64>().ok())
@@ -185,20 +200,16 @@ fn parse_size_kb(raw: &str) -> Option<u32> {
     })
 }
 
-/// Socket designations, in package order. Only available with root.
-fn dmidecode_sockets(ctx: &mut Ctx) -> Vec<String> {
-    match run("dmidecode", &["-t", "processor"]) {
-        Ok(output) => output
-            .lines()
-            .filter(|l| l.trim_start().starts_with("Socket Designation:"))
-            .filter_map(value_after_colon)
-            .filter_map(clean)
-            .collect(),
-        Err(e) => {
-            ctx.warn(format!("cpu: socket designation unavailable ({e})"));
-            Vec::new()
-        }
+/// Firmware's own view of each package, in package order.
+fn firmware_processors(ctx: &mut Ctx) -> Vec<dmi::Processor> {
+    let processors = dmi::processors();
+    if processors.is_empty() && !dmi::readable() {
+        ctx.warn(
+            "cpu: socket designation and rated clock come from SMBIOS, which is readable only by \
+             root on Linux",
+        );
     }
+    processors
 }
 
 // ---------------------------------------------------------------------------
@@ -211,7 +222,6 @@ pub fn gpus(ctx: &mut Ctx) -> Vec<Gpu> {
         return Vec::new();
     };
 
-    let names = lspci_names();
     let mut cards: Vec<_> = entries
         .flatten()
         .filter(|e| {
@@ -237,12 +247,10 @@ pub fn gpus(ctx: &mut Ctx) -> Vec<Gpu> {
                 .map(str::to_string)
                 .unwrap_or_else(|| format!("Vendor 0x{vendor_id:04X}"));
 
-            // Without `lspci` there is no model string in sysfs at all; the
-            // Vulkan merge usually supplies one, and the identifiers are always
-            // present either way.
-            let model = slot
-                .as_deref()
-                .and_then(|s| names.get(s).cloned())
+            // sysfs carries no model string, only identifiers. The PCI ID
+            // database resolves them; failing that, the Vulkan merge usually
+            // supplies a name, and the identifiers are present regardless.
+            let model = pci_device_name(vendor_id, device_id)
                 .unwrap_or_else(|| format!("Device 0x{device_id:04X}"));
 
             let mut gpu = blank_gpu(manufacturer, model);
@@ -272,30 +280,59 @@ pub fn gpus(ctx: &mut Ctx) -> Vec<Gpu> {
         .collect()
 }
 
-/// PCI slot → device description, from `lspci` when it is installed.
-fn lspci_names() -> HashMap<String, String> {
-    let Ok(output) = run("lspci", &["-D", "-mm"]) else {
-        return HashMap::new();
-    };
+/// Look up a device name in the system's PCI ID database.
+///
+/// This is the same file `lspci` reads, so parsing it directly gives the same
+/// answer without a process spawn — and works on minimal images where
+/// `pciutils` was never installed but `hwdata` was.
+///
+/// The format is indentation-structured:
+///
+/// ```text
+/// 10de  NVIDIA Corporation
+/// \t2820  AD107M [GeForce RTX 4060 Max-Q]
+/// ```
+fn pci_device_name(vendor_id: u32, device_id: u32) -> Option<String> {
+    const DATABASES: [&str; 4] = [
+        "/usr/share/hwdata/pci.ids",
+        "/usr/share/misc/pci.ids",
+        "/usr/share/pci.ids",
+        "/var/lib/pciutils/pci.ids",
+    ];
 
-    output
-        .lines()
-        .filter_map(|line| {
-            let (slot, rest) = line.split_once(' ')?;
-            // `0000:01:00.0 "VGA compatible controller" "NVIDIA" "AD107M" ...`
-            let fields: Vec<&str> = rest.split('"').filter(|f| !f.trim().is_empty()).collect();
-            let class = fields.first()?;
-            if !class.contains("VGA")
-                && !class.contains("3D controller")
-                && !class.contains("Display controller")
-            {
-                return None;
+    let contents = DATABASES.iter().find_map(|path| std::fs::read_to_string(path).ok())?;
+
+    let vendor_prefix = format!("{vendor_id:04x}");
+    let device_prefix = format!("{device_id:04x}");
+    let mut in_vendor = false;
+
+    for line in contents.lines() {
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+        // Sub-vendor entries are indented twice and are not wanted here.
+        if line.starts_with("\t\t") {
+            continue;
+        }
+
+        if let Some(entry) = line.strip_prefix('\t') {
+            if !in_vendor {
+                continue;
             }
-            let vendor = fields.get(1)?.trim();
-            let device = fields.get(2)?.trim();
-            Some((slot.to_string(), format!("{vendor} {device}")))
-        })
-        .collect()
+            if let Some(name) = entry.strip_prefix(&device_prefix) {
+                return clean(name);
+            }
+            continue;
+        }
+
+        // A new unindented line ends the vendor block we were in.
+        if in_vendor {
+            return None;
+        }
+        in_vendor = line.starts_with(&vendor_prefix);
+    }
+
+    None
 }
 
 /// Read a sysfs file holding `0x1002`.
@@ -313,59 +350,148 @@ fn uevent_value(path: &Path, key: &str) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
+// HIP / ROCm
+// ---------------------------------------------------------------------------
+
+const KFD_NODES: &str = "/sys/class/kfd/kfd/topology/nodes";
+
+/// Read the HIP/ROCm situation from the kernel driver's own topology.
+///
+/// `amdkfd` publishes one node per agent, and every property needed here is a
+/// plain unprivileged sysfs read — no `rocminfo`, no `rocm-smi`, and no
+/// dependency on ROCm's userspace being on `PATH`.
+pub fn hip(ctx: &mut Ctx) -> crate::scan::compute::Hip {
+    use crate::scan::compute::{gfx_name, Hip, HipDevice};
+
+    let mut hip = Hip {
+        rocm_version: rocm_version(),
+        ..Default::default()
+    };
+
+    // The runtime library is what a HIP program actually loads; the kernel
+    // driver alone is not enough to run anything.
+    hip.runtime_present = [
+        "/opt/rocm/lib/libamdhip64.so",
+        "/usr/lib/x86_64-linux-gnu/libamdhip64.so",
+        "/usr/lib64/libamdhip64.so",
+        "/usr/lib/libamdhip64.so",
+    ]
+    .iter()
+    .any(|path| Path::new(path).exists());
+
+    let Ok(entries) = std::fs::read_dir(KFD_NODES) else {
+        // No amdkfd at all: either no AMD GPU or the driver is not loaded.
+        return hip;
+    };
+
+    let mut nodes: Vec<_> = entries.flatten().collect();
+    nodes.sort_by_key(|e| e.file_name());
+
+    for node in nodes {
+        let path = node.path();
+        let Some(properties) = read_trimmed(path.join("properties")) else {
+            continue;
+        };
+
+        let property = |key: &str| {
+            properties.lines().find_map(|line| {
+                let (name, value) = line.split_once(char::is_whitespace)?;
+                (name == key).then(|| value.trim().parse::<u64>().ok())?
+            })
+        };
+
+        // CPU nodes appear in the same topology and have no SIMDs.
+        let Some(gfx_architecture) = property("gfx_target_version").and_then(gfx_name) else {
+            continue;
+        };
+
+        hip.devices.push(HipDevice {
+            pci_bus: property("location_id").map(|id| {
+                let domain = property("domain").unwrap_or(0);
+                pci_address(domain, id)
+            }),
+            gfx_architecture: Some(gfx_architecture),
+            name: read_trimmed(path.join("name")).and_then(clean),
+        });
+    }
+
+    if !hip.devices.is_empty() && !hip.runtime_present {
+        ctx.warn(
+            "hip: an AMD compute agent is present but no HIP runtime library was found; install \
+             ROCm to use it",
+        );
+    }
+
+    hip
+}
+
+/// `location_id` packs the PCI bus, device and function the same way the
+/// kernel's `PCI_DEVFN` macro does.
+fn pci_address(domain: u64, location_id: u64) -> String {
+    let bus = (location_id >> 8) & 0xFF;
+    let device = (location_id >> 3) & 0x1F;
+    let function = location_id & 0x7;
+    format!("{domain:04x}:{bus:02x}:{device:02x}.{function}")
+}
+
+/// ROCm stamps its release into a plain text file at install time.
+fn rocm_version() -> Option<String> {
+    ["/opt/rocm/.info/version", "/opt/rocm/.info/version-dev"]
+        .iter()
+        .find_map(|path| read_trimmed(path))
+        // The file reads like "6.2.4-123"; the build suffix is noise here.
+        .and_then(|raw| clean(raw.split('-').next().unwrap_or(&raw)))
+}
+
+// ---------------------------------------------------------------------------
 // Memory
 // ---------------------------------------------------------------------------
 
 pub fn memory(ctx: &mut Ctx) -> MemoryNative {
-    // `dmidecode` is a process spawn that needs root, so for most callers this
-    // costs a failed exec and returns nothing. Not worth paying for below the
-    // tier that asked for itemised inventory.
-    if !ctx.wants(DetailLevel::Full) {
-        return MemoryNative::default();
-    }
-
-    let output = match run("dmidecode", &["-t", "memory"]) {
-        Ok(o) => o,
-        Err(e) => {
-            ctx.warn(format!(
-                "memory modules: per-DIMM detail needs SMBIOS access, which is root-only on Linux \
-                 ({e})"
-            ));
-            return MemoryNative::default();
-        }
+    // Slot occupancy comes from a much smaller structure than the per-module
+    // inventory, so it is offered at every level — as far as SMBIOS allows,
+    // which on Linux means root either way.
+    let slots_total = dmi::memory_slots();
+    let empty = |slots_total| MemoryNative {
+        modules: Vec::new(),
+        slots_total,
+        slots_used: None,
     };
 
-    let mut modules = Vec::new();
-    let mut slots_total = None;
-    let mut current: Option<HashMap<String, String>> = None;
-
-    for line in output.lines() {
-        let trimmed = line.trim();
-
-        if trimmed.starts_with("Memory Device") && !trimmed.contains("Mapped") {
-            if let Some(block) = current.take() {
-                push_module(&mut modules, block);
-            }
-            current = Some(HashMap::new());
-            continue;
-        }
-        if trimmed.starts_with("Physical Memory Array") {
-            if let Some(block) = current.take() {
-                push_module(&mut modules, block);
-            }
-            continue;
-        }
-        if let Some(devices) = trimmed.strip_prefix("Number Of Devices:") {
-            slots_total = devices.trim().parse().ok();
-            continue;
-        }
-        if let (Some(block), Some((key, value))) = (current.as_mut(), trimmed.split_once(':')) {
-            block.insert(key.trim().to_string(), value.trim().to_string());
-        }
+    if !ctx.wants(DetailLevel::Full) {
+        return empty(slots_total);
     }
-    if let Some(block) = current.take() {
-        push_module(&mut modules, block);
+
+    let devices = dmi::memory_devices();
+    if devices.is_empty() {
+        if !dmi::readable() {
+            ctx.warn(
+                "memory modules: the SMBIOS tables under /sys/firmware/dmi are readable only by \
+                 root, so per-DIMM detail was omitted",
+            );
+        }
+        return empty(slots_total);
     }
+
+    let modules: Vec<MemoryModule> = devices
+        .into_iter()
+        .map(|d| MemoryModule {
+            slot: d.locator,
+            bank: d.bank_locator,
+            manufacturer: d.manufacturer,
+            part_number: d.part_number,
+            capacity_mb: d.capacity_mb,
+            speed_mts: d.speed_mts,
+            configured_speed_mts: d.configured_speed_mts,
+            memory_type: d.memory_type.map(str::to_string),
+            form_factor: d.form_factor.map(str::to_string),
+            voltage_mv: d.voltage_mv,
+            rank: d.rank,
+            data_width_bits: d.data_width_bits,
+            total_width_bits: d.total_width_bits,
+            serial: d.serial,
+        })
+        .collect();
 
     MemoryNative {
         slots_used: Some(modules.len() as u32),
@@ -376,58 +502,7 @@ pub fn memory(ctx: &mut Ctx) -> MemoryNative {
 
 /// Turn one `dmidecode` "Memory Device" block into a module, skipping empty
 /// slots - `dmidecode` lists those with `Size: No Module Installed`.
-fn push_module(modules: &mut Vec<MemoryModule>, block: HashMap<String, String>) {
-    let get = |key: &str| block.get(key).and_then(clean);
-    let capacity_mb = block.get("Size").and_then(|s| parse_dmi_size_mb(s));
-    if capacity_mb.is_none() {
-        return;
-    }
-
-    modules.push(MemoryModule {
-        slot: get("Locator"),
-        bank: get("Bank Locator"),
-        manufacturer: get("Manufacturer"),
-        part_number: get("Part Number"),
-        capacity_mb,
-        speed_mts: get("Speed").as_deref().and_then(parse_leading_u32),
-        configured_speed_mts: get("Configured Memory Speed")
-            .as_deref()
-            .and_then(parse_leading_u32),
-        memory_type: get("Type"),
-        form_factor: get("Form Factor"),
-        voltage_mv: get("Configured Voltage")
-            .as_deref()
-            .and_then(parse_volts_mv),
-        rank: get("Rank").as_deref().and_then(parse_leading_u32),
-        data_width_bits: get("Data Width").as_deref().and_then(parse_leading_u32),
-        total_width_bits: get("Total Width").as_deref().and_then(parse_leading_u32),
-        serial: get("Serial Number"),
-    });
-}
-
-/// `"32 GB"`, `"16384 MB"` → mebibytes.
-fn parse_dmi_size_mb(raw: &str) -> Option<u64> {
-    let mut parts = raw.split_whitespace();
-    let value: u64 = parts.next()?.parse().ok()?;
-    Some(match parts.next()?.to_ascii_uppercase().as_str() {
-        "KB" => value / 1024,
-        "MB" => value,
-        "GB" => value * 1024,
-        "TB" => value * 1024 * 1024,
-        _ => return None,
-    })
-}
-
-/// `"4800 MT/s"` → `4800`.
-fn parse_leading_u32(raw: &str) -> Option<u32> {
-    raw.split_whitespace().next()?.parse().ok()
-}
-
-/// `"1.1 V"` → `1100`.
-fn parse_volts_mv(raw: &str) -> Option<u32> {
-    let volts: f64 = raw.split_whitespace().next()?.parse().ok()?;
-    Some((volts * 1000.0).round() as u32)
-}
+// (memory module decoding now lives in `dmi`)
 
 // ---------------------------------------------------------------------------
 // Storage
@@ -777,21 +852,38 @@ fn os_release() -> HashMap<String, String> {
         .collect()
 }
 
+/// Detect virtualisation and containerisation from the filesystem alone.
+///
+/// This is what `systemd-detect-virt` does internally, minus the process
+/// spawn and the dependency on systemd being installed — which matters,
+/// because the containers most likely to be running this are the ones least
+/// likely to have it.
 fn virtualization() -> Option<String> {
-    // `systemd-detect-virt` is the authority where it exists, and prints
-    // "none" on bare metal.
-    if let Ok(output) = run("systemd-detect-virt", &[]) {
-        let detected = output.trim();
-        if !detected.is_empty() && detected != "none" {
-            return clean(detected);
-        }
-        return None;
+    // Containers first: a container on a VM should report the container, since
+    // that is the boundary the application actually lives inside.
+    if let Some(kind) = container() {
+        return Some(kind.to_string());
     }
 
-    // Otherwise fall back to the identity the hypervisor stamps into DMI.
+    // WSL is a VM but identifies itself only through the kernel release.
+    if let Some(release) = read_trimmed("/proc/sys/kernel/osrelease") {
+        let lowered = release.to_ascii_lowercase();
+        if lowered.contains("microsoft") || lowered.contains("wsl") {
+            return Some("WSL".into());
+        }
+    }
+
+    // Xen publishes its own directory rather than appearing in DMI.
+    if Path::new("/proc/xen").exists() || read_trimmed("/sys/hypervisor/type").is_some() {
+        return Some("Xen".into());
+    }
+
+    // Everything else stamps an identity into DMI, which is world-readable
+    // unlike the tables behind it.
     let haystack = [
         read_trimmed(format!("{DMI}/sys_vendor")),
         read_trimmed(format!("{DMI}/product_name")),
+        read_trimmed(format!("{DMI}/board_vendor")),
     ]
     .into_iter()
     .flatten()
@@ -804,12 +896,50 @@ fn virtualization() -> Option<String> {
             _ if haystack.contains("vmware") => "VMware",
             _ if haystack.contains("virtualbox") || haystack.contains("innotek") => "VirtualBox",
             _ if haystack.contains("kvm") => "KVM",
-            _ if haystack.contains("qemu") => "QEMU",
+            _ if haystack.contains("qemu") || haystack.contains("bochs") => "QEMU",
             _ if haystack.contains("xen") => "Xen",
             _ if haystack.contains("parallels") => "Parallels",
+            _ if haystack.contains("bhyve") => "bhyve",
+            _ if haystack.contains("amazon ec2") => "Amazon EC2",
+            _ if haystack.contains("google") => "Google Compute Engine",
             _ if haystack.contains("microsoft corporation") => "Microsoft Hyper-V",
             _ => return None,
         }
         .to_string(),
     )
+}
+
+/// Identify the container runtime, if this process is inside one.
+fn container() -> Option<&'static str> {
+    if Path::new("/.dockerenv").exists() {
+        return Some("Docker");
+    }
+    if Path::new("/run/.containerenv").exists() {
+        return Some("Podman");
+    }
+
+    // systemd-nspawn and LXC advertise themselves to PID 1's environment.
+    if let Ok(environ) = std::fs::read("/proc/1/environ") {
+        let text = String::from_utf8_lossy(&environ);
+        for entry in text.split('\0') {
+            if let Some(value) = entry.strip_prefix("container=") {
+                return Some(match value {
+                    "lxc" | "lxc-libvirt" => "LXC",
+                    "podman" => "Podman",
+                    "docker" => "Docker",
+                    _ => "container",
+                });
+            }
+        }
+    }
+
+    // Older runtimes leave their name only in PID 1's cgroup path.
+    let cgroup = read_trimmed("/proc/1/cgroup")?;
+    if cgroup.contains("/docker") {
+        Some("Docker")
+    } else if cgroup.contains("/lxc") {
+        Some("LXC")
+    } else {
+        None
+    }
 }

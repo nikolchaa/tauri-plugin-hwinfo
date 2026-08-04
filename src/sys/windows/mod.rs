@@ -320,6 +320,52 @@ pub fn gpus(ctx: &mut Ctx) -> Vec<Gpu> {
 }
 
 // ---------------------------------------------------------------------------
+// HIP / ROCm
+// ---------------------------------------------------------------------------
+
+/// Detect the HIP SDK from its install layout.
+///
+/// Windows has no `amdkfd`, so the kernel topology trick used on Linux is not
+/// available and there is no unprivileged source for the `gfx` architecture.
+/// What can be established without loading the runtime is whether HIP is
+/// installed and which version.
+pub fn hip(_ctx: &mut Ctx) -> crate::scan::compute::Hip {
+    use std::path::{Path, PathBuf};
+
+    use crate::scan::compute::Hip;
+
+    // The installer sets HIP_PATH to the versioned root, e.g.
+    // `C:\Program Files\AMD\ROCm\6.2\`.
+    let root: Option<PathBuf> = std::env::var_os("HIP_PATH")
+        .map(PathBuf::from)
+        .filter(|p| p.exists());
+
+    let runtime_present = root
+        .as_ref()
+        .map(|r| r.join("bin").join("amdhip64.dll").exists())
+        .unwrap_or(false)
+        // The runtime is also dropped into the system directory by the driver.
+        || Path::new(r"C:\Windows\System32\amdhip64.dll").exists()
+        || Path::new(r"C:\Windows\System32\amdhip64_6.dll").exists();
+
+    // The version lives in the install path rather than any queryable field.
+    let rocm_version = root.as_ref().and_then(|r| {
+        let name = r.file_name().or_else(|| r.parent()?.file_name())?;
+        clean(name.to_string_lossy())
+            .filter(|v| v.starts_with(|c: char| c.is_ascii_digit()))
+    });
+
+    Hip {
+        runtime_present,
+        hip_version: None,
+        rocm_version,
+        // Without the runtime loaded there is no per-adapter detail to give;
+        // the GPU collector still marks AMD adapters as HIP-capable.
+        devices: Vec::new(),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Memory
 // ---------------------------------------------------------------------------
 

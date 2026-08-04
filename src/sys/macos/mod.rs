@@ -1,10 +1,14 @@
 //! macOS backend.
 //!
-//! `sysctl -a` covers the CPU exhaustively for the cost of one process.
-//! Everything else comes from `system_profiler -json`, the only supported way
-//! to reach the hardware inventory without private frameworks. Each data type
-//! is requested separately - a full report takes seconds - and memoised on the
-//! scan context, because several sections read the same one.
+//! The CPU comes from `sysctlbyname`, displays from Core Graphics, and the
+//! machine's identity from `hw.model` - all direct calls, so the sections that
+//! run at every detail level spawn no processes at all.
+//!
+//! `system_profiler -json` remains for the itemised inventory that has no
+//! public API short of private frameworks: memory modules, physical disks and
+//! the GPU list. Each data type is requested separately - a full report takes
+//! seconds - and memoised on the scan context, because several sections read
+//! the same one.
 //!
 //! Apple silicon genuinely reports less than an Intel Mac did: there are no
 //! DIMM slots to enumerate and no discrete GPU device. Fields are `null` there
@@ -14,11 +18,14 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use super::util::{edid_vendor_code, pnp_vendor, run};
+use super::util::run;
 use super::{CpuNative, DisplayNative, MemoryNative, NetNative, OsNative};
 use crate::models::*;
 use crate::scan::gpu::blank_gpu;
 use crate::scan::{clean, clean_opt, Ctx};
+
+mod display;
+mod sysctl;
 
 // ---------------------------------------------------------------------------
 // Shared plumbing
@@ -71,24 +78,6 @@ fn id_value(value: &Value, key: &str) -> Option<u32> {
     }
 }
 
-/// All `sysctl` keys. Memoised, since both the CPU and OS collectors want them.
-fn sysctl(ctx: &mut Ctx) -> HashMap<String, String> {
-    let output = match ctx.cached("sysctl", || run("sysctl", &["-a"])) {
-        Ok(o) => o,
-        Err(e) => {
-            ctx.warn(format!("sysctl: {e}"));
-            return HashMap::new();
-        }
-    };
-
-    output
-        .lines()
-        .filter_map(|line| {
-            let (key, value) = line.split_once(':')?;
-            Some((key.trim().to_string(), value.trim().to_string()))
-        })
-        .collect()
-}
 
 /// `"8 GB"`, `"1536 MB"` → mebibytes.
 fn parse_size_mb(raw: &str) -> Option<u64> {
@@ -108,22 +97,20 @@ fn parse_size_mb(raw: &str) -> Option<u64> {
 // ---------------------------------------------------------------------------
 
 pub fn cpu(ctx: &mut Ctx) -> Vec<CpuNative> {
-    let keys = sysctl(ctx);
-    let get = |key: &str| keys.get(key).and_then(clean);
-    let num = |key: &str| keys.get(key).and_then(|v| v.trim().parse::<u64>().ok());
     // Intel Macs report clocks in Hz; Apple silicon omits them entirely,
     // because its cores run at published fixed frequencies the kernel does not
     // expose.
-    let mhz = |key: &str| num(key).map(|hz| (hz / 1_000_000) as u32);
+    let mhz = |key: &str| sysctl::integer(key).map(|hz| (hz / 1_000_000) as u32);
+    let kb = |key: &str| sysctl::integer(key).map(|bytes| (bytes / 1024) as u32);
 
-    let model = get("machdep.cpu.brand_string");
+    let model = sysctl::string("machdep.cpu.brand_string");
     if model.is_none() {
         ctx.warn("cpu: sysctl reported no processor brand string");
     }
 
     vec![CpuNative {
         // Apple silicon has no CPUID vendor string to report.
-        manufacturer: get("machdep.cpu.vendor").or_else(|| {
+        manufacturer: sysctl::string("machdep.cpu.vendor").or_else(|| {
             model
                 .as_deref()
                 .filter(|m| m.starts_with("Apple"))
@@ -131,24 +118,25 @@ pub fn cpu(ctx: &mut Ctx) -> Vec<CpuNative> {
         }),
         model,
         socket: None,
-        physical_cores: num("hw.physicalcpu").map(|v| v as u32),
-        threads: num("hw.logicalcpu").map(|v| v as u32),
+        physical_cores: sysctl::integer("hw.physicalcpu").map(|v| v as u32),
+        threads: sysctl::integer("hw.logicalcpu").map(|v| v as u32),
         base_frequency: mhz("hw.cpufrequency"),
         max_frequency: mhz("hw.cpufrequency_max"),
         current_frequency: mhz("hw.cpufrequency"),
-        l1d_kb: num("hw.l1dcachesize").map(|b| (b / 1024) as u32),
-        l1i_kb: num("hw.l1icachesize").map(|b| (b / 1024) as u32),
-        l2_kb: num("hw.l2cachesize").map(|b| (b / 1024) as u32),
-        l3_kb: num("hw.l3cachesize").map(|b| (b / 1024) as u32),
-        // VMX appears as a feature flag on Intel Macs. Apple silicon
+        l1d_kb: kb("hw.l1dcachesize"),
+        l1i_kb: kb("hw.l1icachesize"),
+        l2_kb: kb("hw.l2cachesize"),
+        l3_kb: kb("hw.l3cachesize"),
+        // Intel Macs list VMX among the CPU features. Apple silicon
         // virtualises through the Hypervisor framework and advertises nothing
-        // here, so absence is not a negative answer.
-        virtualization: keys.get("machdep.cpu.features").map(|features| {
+        // here, so absence is not a negative answer — hence the `Option`
+        // rather than a bare false.
+        virtualization: sysctl::string("machdep.cpu.features").map(|features| {
             features
                 .split_whitespace()
                 .any(|f| f.eq_ignore_ascii_case("VMX"))
         }),
-        microcode: get("machdep.cpu.microcode_version"),
+        microcode: sysctl::string("machdep.cpu.microcode_version"),
         temperature_c: None,
         serial: None,
     }]
@@ -197,10 +185,6 @@ pub fn gpus(ctx: &mut Ctx) -> Vec<Gpu> {
             gpu.shared_memory_mb = text(entry, "spdisplays_vram_shared")
                 .as_deref()
                 .and_then(parse_size_mb);
-            // Every Mac that can run a Tauri app supports both.
-            gpu.api.metal = true;
-            gpu.api.opencl = true;
-
             gpu
         })
         .collect()
@@ -361,101 +345,38 @@ pub fn network(ctx: &mut Ctx) -> HashMap<String, NetNative> {
 // ---------------------------------------------------------------------------
 
 pub fn displays(ctx: &mut Ctx) -> Vec<DisplayNative> {
-    profiler(ctx, "SPDisplaysDataType", "display")
-        .iter()
-        .flat_map(|gpu| {
-            gpu.get("spdisplays_ndrvs")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default()
-        })
-        .map(|screen| {
-            let (width, height, refresh_rate_hz) = text(&screen, "_spdisplays_resolution")
-                .or_else(|| text(&screen, "spdisplays_resolution"))
-                .as_deref()
-                .map(parse_resolution)
-                .unwrap_or_default();
-
-            let (native_width, native_height, _) = text(&screen, "_spdisplays_pixels")
-                .as_deref()
-                .map(parse_resolution)
-                .unwrap_or_default();
-
-            DisplayNative {
-                name: text(&screen, "_name"),
-                manufacturer: id_value(&screen, "_spdisplays_display-vendor-id")
-                    .and_then(|id| edid_vendor_code(id as u16))
-                    .map(|code| pnp_vendor(&code).map(str::to_string).unwrap_or(code)),
-                model: text(&screen, "_spdisplays_display-product-name")
-                    .or_else(|| text(&screen, "_name")),
-                width,
-                height,
-                refresh_rate_hz,
-                native_width,
-                native_height,
-                position_x: None,
-                position_y: None,
-                is_primary: text(&screen, "spdisplays_main").map(|v| v.contains("yes")),
-                is_internal: Some(
-                    text(&screen, "spdisplays_connection_type")
-                        .is_some_and(|c| c.contains("internal")),
-                ),
-                bits_per_pixel: text(&screen, "spdisplays_depth").and_then(|d| color_depth(&d)),
-                // The physical dimensions are not in `system_profiler` output;
-                // only the diagonal, and only for built-in panels.
-                physical_width_mm: None,
-                physical_height_mm: None,
-                manufacture_year: None,
-                serial: text(&screen, "_spdisplays_display-serial-number"),
-            }
-        })
-        .collect()
+    display::displays(ctx)
 }
 
-/// `"3024 x 1964 @ 120.00Hz"` → `(3024, 1964, 120.0)`.
-fn parse_resolution(raw: &str) -> (Option<u32>, Option<u32>, Option<f64>) {
-    let (dimensions, refresh) = match raw.split_once('@') {
-        Some((d, r)) => (d, Some(r)),
-        None => (raw, None),
-    };
-
-    let mut parts = dimensions.split('x');
-    let width = parts.next().and_then(|v| v.trim().parse().ok());
-    let height = parts.next().and_then(|v| v.trim().parse().ok());
-    let hz = refresh.and_then(|r| {
-        r.trim()
-            .trim_end_matches(['H', 'h', 'Z', 'z'])
-            .trim()
-            .parse()
-            .ok()
-    });
-
-    (width, height, hz)
-}
-
-/// macOS spells the depth out: `"CGSThirtyTwoBitColor"`.
-fn color_depth(raw: &str) -> Option<u32> {
-    Some(match () {
-        _ if raw.contains("ThirtyTwo") => 32,
-        _ if raw.contains("TwentyFour") => 24,
-        _ if raw.contains("Sixteen") => 16,
-        _ if raw.contains("Eight") => 8,
-        _ => return None,
-    })
-}
+// (resolution and colour depth now come typed from Core Graphics)
 
 // ---------------------------------------------------------------------------
 // Board / firmware
 // ---------------------------------------------------------------------------
 
 pub fn board(ctx: &mut Ctx) -> Board {
-    let hardware = profiler(ctx, "SPHardwareDataType", "board");
-    let entry = hardware.first().cloned().unwrap_or(Value::Null);
+    // `hw.model` gives the model identifier ("MacBookPro18,3") for free.
+    // Everything else in the hardware report is either an identifier or
+    // firmware detail, so the spawn is only worth it when one of those was
+    // actually requested.
+    let model = sysctl::string("hw.model");
+    let wants_report = ctx.mode.is_unsafe() || ctx.wants(DetailLevel::Full);
+    let entry = if wants_report {
+        profiler(ctx, "SPHardwareDataType", "board")
+            .first()
+            .cloned()
+            .unwrap_or(Value::Null)
+    } else {
+        Value::Null
+    };
 
     Board {
         // A Mac has no logic-board identity separate from the machine itself.
         manufacturer: Some("Apple Inc.".into()),
-        product: text(&entry, "machine_model").or_else(|| text(&entry, "machine_name")),
+        product: model
+            .clone()
+            .or_else(|| text(&entry, "machine_model"))
+            .or_else(|| text(&entry, "machine_name")),
         version: None,
         serial: text(&entry, "serial_number"),
         asset_tag: None,
@@ -471,19 +392,24 @@ pub fn board(ctx: &mut Ctx) -> Board {
         },
         chassis: Chassis {
             manufacturer: Some("Apple Inc.".into()),
-            kind: text(&entry, "machine_name").map(|name| {
-                if name.to_ascii_lowercase().contains("book") {
-                    "Notebook".into()
-                } else {
-                    "Desktop".into()
-                }
-            }),
+            // The model identifier names the form factor directly:
+            // "MacBookPro18,3" against "Macmini9,1".
+            kind: model
+                .as_deref()
+                .or_else(|| entry.get("machine_name")?.as_str())
+                .map(|name| {
+                    if name.to_ascii_lowercase().contains("book") {
+                        "Notebook".into()
+                    } else {
+                        "Desktop".into()
+                    }
+                }),
             version: None,
             serial: None,
         },
         system: SystemIdentity {
             manufacturer: Some("Apple Inc.".into()),
-            product: text(&entry, "machine_model"),
+            product: model.clone().or_else(|| text(&entry, "machine_model")),
             version: None,
             family: text(&entry, "machine_name"),
             sku: None,
@@ -493,31 +419,38 @@ pub fn board(ctx: &mut Ctx) -> Board {
     }
 }
 
+/// ROCm has never supported macOS, so this is a definite negative rather than
+/// an unread probe.
+pub fn hip(_ctx: &mut Ctx) -> crate::scan::compute::Hip {
+    crate::scan::compute::Hip::default()
+}
+
 // ---------------------------------------------------------------------------
 // OS
 // ---------------------------------------------------------------------------
 
 pub fn os(ctx: &mut Ctx) -> OsNative {
-    let virtualization = sysctl(ctx)
-        .get("kern.hv_vmm_present")
-        .filter(|v| v.trim() == "1")
-        // The sysctl says a hypervisor is present but never which one.
-        .map(|_| "hypervisor".to_string());
-
-    let machine_id = profiler(ctx, "SPHardwareDataType", "os")
-        .first()
-        .and_then(|entry| text(entry, "platform_UUID"));
+    // The hardware UUID is the closest macOS equivalent of a machine ID, and
+    // it is only reachable through `system_profiler`. Since it is an
+    // identifier, the spawn is skipped entirely unless the caller asked for
+    // identifiers — which keeps a safe-mode scan free of processes.
+    let machine_id = ctx.mode.is_unsafe().then(|| {
+        profiler(ctx, "SPHardwareDataType", "os")
+            .first()
+            .and_then(|entry| text(entry, "platform_UUID"))
+    });
 
     OsNative {
-        build: ctx
-            .cached("sw_vers", || run("sw_vers", &["-buildVersion"]))
-            .ok()
-            .and_then(clean),
+        // `kern.osversion` is the build identifier `sw_vers -buildVersion`
+        // prints, without the process.
+        build: sysctl::string("kern.osversion"),
         edition: None,
         codename: None,
-        virtualization,
-        // The hardware UUID is the closest macOS equivalent of a machine ID.
-        machine_id,
+        // The sysctl reports that a hypervisor is present but never which one.
+        virtualization: sysctl::flag("kern.hv_vmm_present")
+            .unwrap_or(false)
+            .then(|| "hypervisor".to_string()),
+        machine_id: machine_id.flatten(),
         user: std::env::var("USER").ok().and_then(clean),
     }
 }

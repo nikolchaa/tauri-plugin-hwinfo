@@ -18,6 +18,10 @@
 //!     .expect("error while running tauri application");
 //! ```
 
+// This crate's public types *are* its contract, so an undocumented public item
+// is a documentation bug rather than a style nit.
+#![warn(missing_docs)]
+
 use tauri::{
     plugin::{Builder as PluginBuilder, TauriPlugin},
     AppHandle, Manager, Runtime,
@@ -41,6 +45,7 @@ pub struct Builder {
 }
 
 impl Builder {
+    /// A builder with safe-mode-only defaults.
     pub fn new() -> Self {
         Self::default()
     }
@@ -55,6 +60,7 @@ impl Builder {
         self
     }
 
+    /// Produce the plugin for [`tauri::Builder::plugin`].
     pub fn build<R: Runtime>(self) -> TauriPlugin<R> {
         PluginBuilder::new("hwinfo")
             .invoke_handler(tauri::generate_handler![
@@ -114,6 +120,7 @@ pub struct Hwinfo<R: Runtime> {
 /// Extension trait giving [`tauri::App`], [`tauri::AppHandle`] and
 /// [`tauri::Window`] access to the hwinfo APIs.
 pub trait HwinfoExt<R: Runtime> {
+    /// The managed [`Hwinfo`] instance for this application.
     fn hwinfo(&self) -> &Hwinfo<R>;
 }
 

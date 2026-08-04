@@ -10,6 +10,7 @@ use crate::models::*;
 
 pub(crate) mod battery;
 pub(crate) mod board;
+pub(crate) mod compute;
 pub(crate) mod cpu;
 pub(crate) mod display;
 pub(crate) mod gpu;
@@ -138,7 +139,7 @@ pub fn run(mut ctx: Ctx, sections: &[Section]) -> SystemInfo {
 
     SystemInfo {
         scan: ScanMeta {
-            version: 2,
+            version: 1,
             mode: ctx.mode,
             detail: ctx.detail,
             sections: sections.to_vec(),

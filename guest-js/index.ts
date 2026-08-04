@@ -53,7 +53,10 @@ export interface ScanOptions {
 
 /** What ran, how long it took, and what it could not read. */
 export interface ScanMeta {
-  /** Contract version of this payload. `2` for this release. */
+  /**
+   * Contract version of this payload. Tracks the package's major version, so
+   * it changes only when the shape does. `1` for this release.
+   */
   version: number;
   mode: ScanMode;
   /**
@@ -206,7 +209,7 @@ export interface Gpu {
 /**
  * Which graphics and compute APIs the adapter supports.
  *
- * The Vulkan and CUDA fields require `detail: "capabilities"` or higher - they
+ * The Vulkan, CUDA, HIP and OpenCL fields require `detail: "capabilities"` or higher - they
  * are live device probes, not table lookups. Without them `vulkan` and `cuda`
  * read `false`, which means *not probed*, not *not supported*; check
  * `scan.detail` to tell the difference.
@@ -220,8 +223,25 @@ export interface GpuApiSupport {
   cuda: boolean;
   /** e.g. `"12.4"`. */
   cudaVersion: string | null;
-  /** e.g. `"8.6"`. */
+  /** CUDA compute capability, e.g. `"8.6"`. */
   computeCapability: string | null;
+  /** Whether AMD's HIP runtime is installed and this adapter is visible to it. */
+  hip: boolean;
+  /** HIP runtime version, e.g. `"6.2.41134"`. */
+  hipVersion: string | null;
+  /** ROCm release the runtime belongs to, e.g. `"6.2.4"`. */
+  rocmVersion: string | null;
+  /**
+   * AMD GPU target architecture, e.g. `"gfx1100"`, `"gfx90a"`.
+   *
+   * This is the field that decides whether a given ROCm build will run: the
+   * officially supported list is narrow and everything else depends on
+   * `HSA_OVERRIDE_GFX_VERSION`. The HIP analogue of {@link computeCapability}.
+   *
+   * Linux only — it comes from the kernel driver's topology, which Windows has
+   * no equivalent of.
+   */
+  gfxArchitecture: string | null;
   /**
    * Highest Direct3D feature level, e.g. `"12_1"`. Windows only, and requires
    * `detail: "full"` - probing it creates a real D3D11 device, which on a
@@ -229,7 +249,17 @@ export interface GpuApiSupport {
    */
   directxFeatureLevel: string | null;
   metal: boolean;
+  /**
+   * Whether a working OpenCL platform is installed.
+   *
+   * Determined by loading the ICD loader and calling `clGetPlatformIDs` — the
+   * loader library exists on most systems whether or not any driver registered
+   * a platform behind it, so its presence alone proves nothing.
+   */
   opencl: boolean;
+  /** Highest OpenCL version any installed platform reports, e.g. `"3.0"`. */
+  openclVersion: string | null;
+  /** e.g. `"4.6"`. */
   openglVersion: string | null;
 }
 

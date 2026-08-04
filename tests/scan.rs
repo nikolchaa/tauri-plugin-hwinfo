@@ -108,7 +108,7 @@ fn core_facts_are_always_populated() {
 fn scan_metadata_describes_the_run() {
     let info = scan(ScanMode::Safe, Some(vec![Section::Os]));
 
-    assert_eq!(info.scan.version, 2);
+    assert_eq!(info.scan.version, 1);
     assert_eq!(info.scan.mode, ScanMode::Safe);
     assert_eq!(info.scan.detail, DetailLevel::Full);
     assert!(info.scan.timestamp > 0);

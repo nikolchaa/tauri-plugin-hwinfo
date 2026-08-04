@@ -1,9 +1,17 @@
 use serde::{ser::Serializer, Serialize};
 
+/// A [`std::result::Result`] with this crate's [`Error`].
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Something that stopped a scan from running at all.
+///
+/// A probe that merely *failed* does not produce an error — it leaves its
+/// fields `null` and records the reason in
+/// [`ScanMeta::warnings`](crate::ScanMeta::warnings), so a partial answer is
+/// always preferred to none.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// A filesystem or process error while reading a platform data source.
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
@@ -16,6 +24,7 @@ pub enum Error {
     #[error("hardware scan failed to complete: {0}")]
     ScanFailed(String),
 
+    /// An error from the Tauri runtime itself.
     #[error(transparent)]
     Tauri(#[from] tauri::Error),
 
