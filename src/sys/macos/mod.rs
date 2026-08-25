@@ -22,7 +22,7 @@ use super::util::run;
 use super::{CpuNative, DisplayNative, MemoryNative, NetNative, OsNative};
 use crate::models::*;
 use crate::scan::gpu::blank_gpu;
-use crate::scan::{clean, clean_opt, Ctx};
+use crate::scan::{clean, clean_opt, to_mb, Ctx};
 
 mod display;
 mod sysctl;
@@ -340,6 +340,7 @@ fn sp_drive(bus: Option<String>, is_nvme: bool, item: &Value) -> Disk {
         size_mb: ["size", "capacity"]
             .iter()
             .find_map(|key| text(item, key))
+            .as_deref()
             .and_then(parse_size_mb)
             .or_else(|| {
                 ["size_in_bytes", "capacity_in_bytes"]
