@@ -295,52 +295,130 @@
       "type": "string",
       "oneOf": [
         {
-          "description": "Enables the get_cpu_info command.",
+          "description": "Enables the get_battery_info command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-cpu-info",
-          "markdownDescription": "Enables the get_cpu_info command."
+          "const": "allow-get-battery-info",
+          "markdownDescription": "Enables the get_battery_info command without any pre-configured scope."
         },
         {
-          "description": "Denies the get_cpu_info command.",
+          "description": "Denies the get_battery_info command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-cpu-info",
-          "markdownDescription": "Denies the get_cpu_info command."
+          "const": "deny-get-battery-info",
+          "markdownDescription": "Denies the get_battery_info command without any pre-configured scope."
         },
         {
-          "description": "Enables the get_gpu_info command.",
+          "description": "Enables the get_board_info command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-gpu-info",
-          "markdownDescription": "Enables the get_gpu_info command."
+          "const": "allow-get-board-info",
+          "markdownDescription": "Enables the get_board_info command without any pre-configured scope."
         },
         {
-          "description": "Denies the get_gpu_info command.",
+          "description": "Denies the get_board_info command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-gpu-info",
-          "markdownDescription": "Denies the get_gpu_info command."
+          "const": "deny-get-board-info",
+          "markdownDescription": "Denies the get_board_info command without any pre-configured scope."
         },
         {
-          "description": "Enables the get_os_info command.",
+          "description": "Enables the get_cpu_info command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-os-info",
-          "markdownDescription": "Enables the get_os_info command."
+          "const": "allow-get-cpu-info",
+          "markdownDescription": "Enables the get_cpu_info command without any pre-configured scope."
         },
         {
-          "description": "Denies the get_os_info command.",
+          "description": "Denies the get_cpu_info command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-os-info",
-          "markdownDescription": "Denies the get_os_info command."
+          "const": "deny-get-cpu-info",
+          "markdownDescription": "Denies the get_cpu_info command without any pre-configured scope."
         },
         {
-          "description": "Enables the get_ram_info command.",
+          "description": "Enables the get_display_info command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-ram-info",
-          "markdownDescription": "Enables the get_ram_info command."
+          "const": "allow-get-display-info",
+          "markdownDescription": "Enables the get_display_info command without any pre-configured scope."
         },
         {
-          "description": "Denies the get_ram_info command.",
+          "description": "Denies the get_display_info command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-ram-info",
-          "markdownDescription": "Denies the get_ram_info command."
+          "const": "deny-get-display-info",
+          "markdownDescription": "Denies the get_display_info command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_gpu_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-gpu-info",
+          "markdownDescription": "Enables the get_gpu_info command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_gpu_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-gpu-info",
+          "markdownDescription": "Denies the get_gpu_info command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_memory_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-memory-info",
+          "markdownDescription": "Enables the get_memory_info command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_memory_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-memory-info",
+          "markdownDescription": "Denies the get_memory_info command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_network_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-network-info",
+          "markdownDescription": "Enables the get_network_info command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_network_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-network-info",
+          "markdownDescription": "Denies the get_network_info command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_os_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-os-info",
+          "markdownDescription": "Enables the get_os_info command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_os_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-os-info",
+          "markdownDescription": "Denies the get_os_info command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_storage_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-storage-info",
+          "markdownDescription": "Enables the get_storage_info command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_storage_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-storage-info",
+          "markdownDescription": "Denies the get_storage_info command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_system_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-system-info",
+          "markdownDescription": "Enables the get_system_info command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_system_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-system-info",
+          "markdownDescription": "Denies the get_system_info command without any pre-configured scope."
+        },
+        {
+          "description": "Allows every hardware section to be read.\n\nScans run in safe mode unless the application explicitly opted in with\n`Builder::new().allow_unsafe_scan(true)`, so this permission alone never\nexposes serial numbers, MAC addresses or machine identifiers.\n\nGrant the individual `allow-get-*-info` permissions instead if the frontend\nonly needs part of the inventory.\n\n#### This default permission set includes:\n\n- `allow-get-system-info`\n- `allow-get-cpu-info`\n- `allow-get-gpu-info`\n- `allow-get-memory-info`\n- `allow-get-storage-info`\n- `allow-get-network-info`\n- `allow-get-display-info`\n- `allow-get-battery-info`\n- `allow-get-board-info`\n- `allow-get-os-info`",
+          "type": "string",
+          "const": "default",
+          "markdownDescription": "Allows every hardware section to be read.\n\nScans run in safe mode unless the application explicitly opted in with\n`Builder::new().allow_unsafe_scan(true)`, so this permission alone never\nexposes serial numbers, MAC addresses or machine identifiers.\n\nGrant the individual `allow-get-*-info` permissions instead if the frontend\nonly needs part of the inventory.\n\n#### This default permission set includes:\n\n- `allow-get-system-info`\n- `allow-get-cpu-info`\n- `allow-get-gpu-info`\n- `allow-get-memory-info`\n- `allow-get-storage-info`\n- `allow-get-network-info`\n- `allow-get-display-info`\n- `allow-get-battery-info`\n- `allow-get-board-info`\n- `allow-get-os-info`"
         }
       ]
     }

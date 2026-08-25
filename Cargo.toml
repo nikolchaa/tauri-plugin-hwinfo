@@ -1,9 +1,9 @@
 [package]
 name = "tauri-plugin-hwinfo"
-version = "0.2.3"
+version = "1.0.0-alpha.1"
 edition = "2021"
 authors = ["Nikola Ranđelović <contact@nikolchaa.com>"]
-description = "A cross-platform Tauri plugin to fetch CPU, RAM, GPU, and OS info."
+description = "A cross-platform Tauri plugin for deep hardware and system inspection: CPU, GPU, memory, storage, network, displays, batteries, motherboard and OS."
 license = "MIT"
 repository = "https://github.com/nikolchaa/tauri-plugin-hwinfo"
 documentation = "https://github.com/nikolchaa/tauri-plugin-hwinfo"
@@ -11,23 +11,60 @@ homepage = "https://github.com/nikolchaa/tauri-plugin-hwinfo"
 readme = "README.md"
 keywords = ["tauri", "plugin", "hardware", "system", "diagnostics"]
 categories = ["development-tools", "os", "hardware-support"]
-rust-version = "1.77.2"
+rust-version = "1.82"
 links = "tauri-plugin-hwinfo"
-exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules", "/target", "/.github"]
+exclude = ["/dist-js", "/guest-js", "/node_modules", "/target", "/.github"]
 
 [dependencies]
 tauri = { version = "2.5.0" }
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 thiserror = "2"
-sysinfo = "0.34.2"
-os_info = "3.10.0"
-windows = { version = "0.54", features = [
-  "Win32_Graphics_Dxgi",
-  "Win32_Graphics_Direct3D11",
-  "Win32_System_SystemServices",
-  "Win32_Foundation",
+sysinfo = "0.39"
+os_info = "3.15"
+ash = { version = "0.38", optional = true, default-features = false, features = [
+  "loaded",
 ] }
-serde_json = "1.0.140"
+libloading = { version = "0.9", optional = true }
+
+[target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
+raw-cpuid = "11"
+
+# starship-battery has no backend for Android and fails to build there outright
+# (a `compile_error!` rather than a graceful stub), so it is scoped to the
+# platforms it actually supports. iOS is one of them: it shares the Darwin
+# IOKit backend with macOS.
+[target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos", target_os = "ios"))'.dependencies]
+starship-battery = { version = "0.11", optional = true }
+
+# `sysctlbyname`, which replaces spawning the `sysctl` binary.
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+wmi = "0.18"
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Dxgi_Common",
+  "Win32_Graphics_Direct3D",
+  "Win32_Graphics_Direct3D11",
+  "Win32_Graphics_Gdi",
+  "Win32_System_SystemInformation",
+  "Win32_System_SystemServices",
+  "Win32_System_Registry",
+] }
 
 [build-dependencies]
 tauri-plugin = { version = "2.2.0", features = ["build"] }
+
+[features]
+default = ["vulkan", "battery", "opencl"]
+# Enumerate GPUs through the Vulkan loader (dynamically loaded at runtime, no SDK
+# needed at build time). Adds driver versions, device classes and heap sizes.
+vulkan = ["dep:ash"]
+# Battery / power-supply reporting.
+battery = ["dep:starship-battery"]
+# Ask the OpenCL ICD loader whether any platform is actually registered. Loaded
+# at runtime; nothing links against OpenCL at build time.
+opencl = ["dep:libloading"]

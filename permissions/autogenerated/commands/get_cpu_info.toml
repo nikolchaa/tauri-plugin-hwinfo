@@ -3,11 +3,11 @@
 "$schema" = "../../schemas/schema.json"
 
 [[permission]]
-identifier = "allow-cpu-info"
-description = "Enables the get_cpu_info command."
+identifier = "allow-get-cpu-info"
+description = "Enables the get_cpu_info command without any pre-configured scope."
 commands.allow = ["get_cpu_info"]
 
 [[permission]]
-identifier = "deny-cpu-info"
-description = "Denies the get_cpu_info command."
+identifier = "deny-get-cpu-info"
+description = "Denies the get_cpu_info command without any pre-configured scope."
 commands.deny = ["get_cpu_info"]

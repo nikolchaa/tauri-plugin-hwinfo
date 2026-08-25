@@ -12,7 +12,10 @@ yarn.lock
 /target
 Cargo.lock
 node_modules/
-/examples
+# Demo apps live here and are not part of the published crate, but the
+# single-file cargo examples the README points at are.
+/examples/*
+!/examples/*.rs
 
 dist-js
 dist
