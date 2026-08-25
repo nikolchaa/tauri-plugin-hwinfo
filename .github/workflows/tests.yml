@@ -1,0 +1,87 @@
+# Manual, on-demand cross-platform test runs.
+#
+# Deliberately NOT wired to push/pull_request: this suite runs real hardware
+# scans and costs minutes of paid macOS/Windows runner time, so it only fires
+# when someone asks for it from the Actions tab (or via `gh workflow run`),
+# against any branch they name.
+#
+# Runners:
+#   ubuntu-latest   x86_64 Linux   - needs GTK/WebKit/dbus dev packages for Tauri
+#   macos-latest    Apple Silicon  - macOS 26 since June 2026
+#   macos-15-intel  x86_64 macOS   - last Intel image; supported until Aug 2027
+#   windows-latest  x86_64 Windows
+
+name: Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch, tag or commit to test (empty = current default branch)"
+        required: false
+        default: ""
+      run-example:
+        description: "Also run the `dump` example for a full JSON smoke test"
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ inputs.branch || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      # Report every platform's result rather than stopping at the first red.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, macos-15-intel, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref }}
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libglib2.0-dev \
+            libgdk-pixbuf-2.0-dev \
+            libwebkit2gtk-4.1-dev \
+            libdbus-1-dev \
+            pkg-config
+
+      - name: Build (all targets, all features)
+        run: cargo build --all-targets --all-features
+
+      - name: Unit and integration tests
+        run: cargo test --all-features -- --nocapture
+
+      # Safe mode keeps hardware identifiers out of the public CI log; this
+      # step proves the whole pipeline produces parseable JSON without crashing.
+      - name: Smoke test - dump example as JSON
+        if: inputs.run-example
+        run: cargo run --example dump -- safe capabilities
+
+      # Advisory: lint findings are visible in the log but do not fail the run.
+      # Platform-specific lints are expected to drift; the build/test gates above
+      # are the pass/fail signal.
+      - name: Clippy (advisory)
+        run: cargo clippy --all-targets --all-features
+        continue-on-error: true

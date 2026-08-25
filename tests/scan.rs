@@ -88,7 +88,8 @@ fn core_facts_are_always_populated() {
     for cpu in &cpus {
         assert!(cpu.threads > 0, "a package reported zero threads");
         assert!(!cpu.architecture.is_empty());
-        // The observed peak can only ever raise the advertised maximum.
+        // The merge folds the observed clock into the maximum, so this holds
+        // even on VMs that advertise no rated ceiling of their own.
         if let Some(current) = cpu.current_frequency {
             assert!(cpu.max_frequency >= current, "max clock below current clock");
         }
@@ -149,6 +150,105 @@ fn full_restores_itemised_detail() {
 
     let storage = info.storage.expect("storage requested");
     assert!(!storage.disks.is_empty(), "no physical disks at full");
+}
+
+/// Adapters may legitimately be absent — a headless Linux CI runner has no
+/// DRM nodes and no Vulkan loader — but anything reported must be well formed.
+#[test]
+fn gpu_entries_are_well_formed_at_capabilities() {
+    let info = scan_at(DetailLevel::Capabilities, &[Section::Gpu]);
+
+    for gpu in info.gpu.iter().flatten() {
+        assert!(!gpu.manufacturer.is_empty(), "adapter with no manufacturer");
+        assert!(!gpu.model.is_empty(), "adapter with no model");
+
+        if let Some(hex) = &gpu.vendor_id_hex {
+            // PCI vendor IDs are four hex digits, but software renderers
+            // (Mesa's llvmpipe) report synthetic IDs beyond 16 bits.
+            assert!(hex.starts_with("0x"), "vendor id hex `{hex}` lacks 0x prefix");
+            assert_eq!(
+                u32::from_str_radix(&hex[2..], 16).ok(),
+                gpu.vendor_id,
+                "vendor id integer and hex disagree"
+            );
+        }
+        if let Some(hex) = &gpu.device_id_hex {
+            assert_eq!(
+                u32::from_str_radix(&hex[2..], 16).ok(),
+                gpu.device_id,
+                "device id integer and hex disagree"
+            );
+        }
+        if let Some(bus) = &gpu.pci_bus {
+            // Windows only fills this through VK_EXT_pci_bus_info, so it can
+            // be null — but when present it is a PCI address on every OS.
+            let parts: Vec<&str> = bus.split([':', '.']).collect();
+            assert_eq!(parts.len(), 4, "pci address `{bus}` is malformed");
+            assert!(u16::from_str_radix(parts[0], 16).is_ok());
+            assert!(u8::from_str_radix(parts[1], 16).is_ok());
+        }
+        if let Some(vram) = gpu.vram_mb {
+            assert!(vram > 0, "adapter reported zero VRAM instead of null");
+        }
+    }
+}
+
+/// Displays are absent on headless runners; present ones must be coherent.
+///
+/// Outside a Tauri runtime there are no monitor hints, so a platform that
+/// cannot measure the *current* mode (Linux sysfs) reports a zero mode and
+/// carries identity plus the panel's native mode instead.
+#[test]
+fn display_entries_are_well_formed() {
+    let info = scan_at(DetailLevel::Full, &[Section::Display]);
+
+    for display in info.display.iter().flatten() {
+        let identified = !display.name.as_deref().unwrap_or_default().is_empty()
+            || display.model.is_some()
+            || display.native_resolution.is_some()
+            || display.manufacturer.is_some();
+        assert!(identified, "display entry carries no identifying fields");
+
+        let mode = display.resolution;
+        if mode.width > 0 && mode.height > 0 {
+            if let Some(native) = display.native_resolution {
+                // A scaled mode's native panel is at least as many pixels.
+                assert!(
+                    native.width * native.height >= mode.width * mode.height,
+                    "native mode smaller than the current mode"
+                );
+            }
+            if let Some(rate) = mode.refresh_rate_hz {
+                assert!(
+                    (24.0..=500.0).contains(&rate),
+                    "implausible refresh rate {rate}"
+                );
+            }
+        }
+    }
+}
+
+/// The board section is where every platform must agree on identity basics.
+#[test]
+fn board_section_has_core_identity() {
+    let info = scan_at(DetailLevel::Full, &[Section::Board]);
+
+    let board = info.board.expect("board section requested");
+    assert!(
+        board
+            .manufacturer
+            .as_deref()
+            .is_some_and(|m| !m.is_empty()),
+        "no board manufacturer reported"
+    );
+    assert!(board.bios.mode.as_deref().is_some_and(|m| !m.is_empty()));
+
+    // Real hardware and CI virtual machines alike report a system product
+    // name — the VMs' hypervisor stand-in ("VMware Virtual Platform") counts.
+    assert!(
+        board.system.product.is_some() || board.product.is_some(),
+        "neither system nor board product reported"
+    );
 }
 
 #[test]
