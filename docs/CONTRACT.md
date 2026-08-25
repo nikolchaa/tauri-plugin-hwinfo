@@ -77,12 +77,16 @@ One entry per adapter, including integrated and software ones.
 | `deviceId` / `deviceIdHex` | `number?` / `string?` | — | | ✅ | ✅ | ⚠️ | |
 | `subsystemId` / `revision` | `string?` / `number?` | — | | ✅ | ✅ | ⚠️ | |
 | `vramMb` | `number?` | — | | ✅ | ⚠️ | ⚠️ | Windows uses DXGI, not the broken WMI `AdapterRAM`. Linux: amdgpu/i915 only until Vulkan or `nvidia-smi` fills in. |
-| `sharedMemoryMb` | `number?` | — | | ✅ | ❌ | ⚠️ | |
+| `sharedMemoryMb` | `number?` | — | | ✅ | ⚠️ | ⚠️ | Linux: amdgpu's GTT aperture. |
 | `driverVersion` | `string?` | — | | ✅ | ⚠️ | ❌ | Linux: out-of-tree modules only, or via Vulkan. |
 | `driverDate` | `string?` | — | | ✅ | ❌ | ❌ | |
 | `pciBus` | `string?` | — | | ⚠️ | ✅ | ⚠️ | Windows needs `VK_EXT_pci_bus_info`. |
 | `currentResolution` | `Resolution?` | — | | ✅ | ❌ | ❌ | |
 | `uuid` | `string?` | `capabilities` | `unsafe` | ✅ | ✅ | ⚠️ | From Vulkan. |
+
+Adapters are enumerated from DRM nodes; any display-class PCI device no driver
+has bound (vfio-pci passthrough, missing driver) is still listed with
+identifiers only, on every distro that mounts sysfs.
 
 ### `gpu[].api` — `GpuApiSupport`
 
@@ -94,12 +98,12 @@ One entry per adapter, including integrated and software ones.
 | `vulkan` | `boolean` | ✅ | ✅ | ⚠️ | macOS needs MoltenVK installed. |
 | `vulkanVersion` | `string?` | ✅ | ✅ | ⚠️ | e.g. `"1.3.280"`. |
 | `vulkanDriver` | `string?` | ✅ | ✅ | ⚠️ | e.g. `"AMD proprietary driver (2.0.324)"`. |
-| `cuda` | `boolean` | ✅ | ✅ | ❌ | Needs `nvidia-smi` on `PATH`. |
-| `cudaVersion` | `string?` | ✅ | ✅ | ❌ | e.g. `"12.4"`. |
-| `computeCapability` | `string?` | ✅ | ✅ | ❌ | e.g. `"8.6"`. |
-| `hip` | `boolean` | ✅ | ✅ | ❌ | ROCm does not target macOS. |
-| `hipVersion` | `string?` | ❌ | ❌ | ❌ | Reserved; needs loading the runtime, which has an unstable ABI. |
-| `rocmVersion` | `string?` | ⚠️ | ✅ | ❌ | Windows: from the `HIP_PATH` install path. Linux: `/opt/rocm/.info/version`. |
+| `cuda` | `boolean` | ✅ | ✅ | ❌ | Needs `nvidia-smi`; without it, falls back to detecting `libcuda.so`. WSL2 supported. |
+| `cudaVersion` | `string?` | ✅ | ✅ | ❌ | e.g. `"12.4"`. Needs `nvidia-smi`. |
+| `computeCapability` | `string?` | ✅ | ✅ | ❌ | e.g. `"8.6"`. Needs `nvidia-smi`. |
+| `hip` | `boolean` | ✅ | ✅ | ❌ | ROCm does not target macOS. Linux finds the runtime in `/opt/rocm`, `/usr/lib64` and multiarch dirs. |
+| `hipVersion` | `string?` | ❌ | ✅ | ❌ | Linux: the runtime library's own soname (`libamdhip64.so.6.2.41134`). |
+| `rocmVersion` | `string?` | ⚠️ | ✅ | ❌ | Windows: from the `HIP_PATH` install path. Linux: `/opt/rocm*/.info/version`, else derived from the HIP runtime version. |
 | `gfxArchitecture` | `string?` | ❌ | ✅ | ❌ | e.g. `"gfx1100"`. From `amdkfd` topology; Windows has no equivalent. |
 | `directxFeatureLevel` | `string?` | ✅ **(`full`)** | ❌ | ❌ | e.g. `"12_1"`. Creates a D3D11 device — wakes a sleeping dGPU. |
 | `metal` | `boolean` | ❌ | ❌ | ✅ | Follows from the target, not a probe. |

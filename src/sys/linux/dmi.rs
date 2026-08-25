@@ -335,19 +335,34 @@ mod tests {
 
     #[test]
     fn decodes_capacity_special_cases() {
-        // A plain 32 GiB module: megabytes, bit 15 clear.
-        let plain = Structure::parse(&raw(17, &vec_at(0x0C, &32768u16.to_le_bytes()), &[])).unwrap();
-        assert_eq!(capacity(&plain), Some(32768));
+        // A plain 16 GiB module: megabytes, bit 15 clear.
+        let plain =
+            Structure::parse(&raw(17, &vec_at(0x0C, &16384u16.to_le_bytes()), &[])).unwrap();
+        assert_eq!(capacity(&plain), Some(16384));
+
+        // Anything at or above 32 GiB overflows the 15-bit field, so firmware
+        // sets the sentinel and puts the real megabyte count at 0x1C.
+        let mut formatted = vec_at(0x0C, &0x7FFFu16.to_le_bytes());
+        let ext = 0x1C - 4;
+        formatted[ext..ext + 4].copy_from_slice(&32768u32.to_le_bytes());
+        let large = Structure::parse(&raw(17, &formatted, &[])).unwrap();
+        assert_eq!(capacity(&large), Some(32768));
 
         // Bit 15 set means the value is in kilobytes.
-        let kb = Structure::parse(&raw(17, &vec_at(0x0C, &(0x8000u16 | 2048).to_le_bytes()), &[]))
-            .unwrap();
+        let kb = Structure::parse(&raw(
+            17,
+            &vec_at(0x0C, &(0x8000u16 | 2048).to_le_bytes()),
+            &[],
+        ))
+        .unwrap();
         assert_eq!(capacity(&kb), Some(2));
 
         // Unknown and empty slots yield nothing rather than zero.
         let unknown =
             Structure::parse(&raw(17, &vec_at(0x0C, &0xFFFFu16.to_le_bytes()), &[])).unwrap();
         assert_eq!(capacity(&unknown), None);
+        let empty = Structure::parse(&raw(17, &vec_at(0x0C, &0u16.to_le_bytes()), &[])).unwrap();
+        assert_eq!(capacity(&empty), None);
     }
 
     /// A formatted area with `bytes` placed at absolute `offset`.

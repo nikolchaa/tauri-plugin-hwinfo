@@ -319,8 +319,13 @@ cargo run --example dump -- full unsafe
   `/sys/firmware/dmi/entries` rather than by shelling to `dmidecode`, device
   names come from the same `pci.ids` database `lspci` reads, virtualisation and
   container detection run off `/proc` and `/sys`, and HIP/ROCm comes from the
-  `amdkfd` topology. The SMBIOS tables are mode `0400`, so DMI serials and the
-  per-DIMM inventory still need root - and say so in `scan.warnings`.
+  `amdkfd` topology. GPU enumeration falls back to a PCI bus sweep for
+  adapters no graphics driver has claimed (vfio-pci passthrough), the HIP
+  runtime is found wherever the distro put it (`/opt/rocm`, `/usr/lib64`,
+  multiarch dirs), and CUDA survives a missing `nvidia-smi` by detecting
+  `libcuda.so` directly, including under WSL2. The SMBIOS tables are mode
+  `0400`, so DMI serials and the per-DIMM inventory still need root - and say
+  so in `scan.warnings`.
 - **macOS** - `sysctlbyname` for the CPU, Core Graphics for displays, `hw.model`
   for the machine identity: the sections that run at every detail level spawn
   nothing. `system_profiler` remains only for `full`-tier inventory that has no

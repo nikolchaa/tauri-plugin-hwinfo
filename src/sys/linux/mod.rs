@@ -98,9 +98,7 @@ pub fn cpu(ctx: &mut Ctx) -> Vec<CpuNative> {
                 l1i_kb: cache.l1i_kb,
                 l2_kb: cache.l2_kb,
                 l3_kb: cache.l3_kb,
-                virtualization: Some(
-                    flags.split_whitespace().any(|f| f == "vmx" || f == "svm"),
-                ),
+                virtualization: Some(flags.split_whitespace().any(|f| f == "vmx" || f == "svm")),
                 microcode: block.get("microcode").and_then(clean),
                 temperature_c: None,
                 // Requires root, and x86 processor serial numbers have been
@@ -217,6 +215,29 @@ fn firmware_processors(ctx: &mut Ctx) -> Vec<dmi::Processor> {
 // ---------------------------------------------------------------------------
 
 pub fn gpus(ctx: &mut Ctx) -> Vec<Gpu> {
+    let mut gpus = drm_gpus(ctx);
+
+    // DRM nodes only exist for adapters a kernel graphics driver has bound.
+    // Adapters bound to vfio-pci for passthrough, or with no driver loaded at
+    // all, are still hardware a caller wants to see — sweep the PCI bus for
+    // display-class devices and add whatever the DRM sweep missed.
+    let known: std::collections::HashSet<String> =
+        gpus.iter().filter_map(|g| g.pci_bus.clone()).collect();
+    let mut extra = pci_class_gpus(&known);
+    if !extra.is_empty() {
+        ctx.warn(format!(
+            "gpu: {} adapter(s) have no kernel graphics driver bound; detail is limited",
+            extra.len()
+        ));
+    }
+    gpus.append(&mut extra);
+
+    gpus.sort_by(|a, b| a.pci_bus.cmp(&b.pci_bus));
+    gpus
+}
+
+/// Adapters the kernel's DRM subsystem has claimed.
+fn drm_gpus(ctx: &mut Ctx) -> Vec<Gpu> {
     let Ok(entries) = std::fs::read_dir("/sys/class/drm") else {
         ctx.warn("gpu: /sys/class/drm is unreadable");
         return Vec::new();
@@ -263,9 +284,15 @@ pub fn gpus(ctx: &mut Ctx) -> Vec<Gpu> {
                 .zip(read_hex(device.join("subsystem_vendor")))
                 .map(|(dev, ven)| format!("0x{dev:04X}{ven:04X}"));
             gpu.pci_bus = slot;
-            // amdgpu and i915 publish the VRAM budget; the NVIDIA proprietary
-            // driver does not, and `nvidia-smi` fills that gap later.
+            // amdgpu publishes both its own VRAM and the GTT aperture —
+            // system memory the adapter can map for itself, which is the
+            // honest answer to "shared memory". i915 publishes neither;
+            // the NVIDIA proprietary driver omits VRAM, and `nvidia-smi`
+            // fills that gap later.
             gpu.vram_mb = read_u64(device.join("mem_info_vram_total"))
+                .map(to_mb)
+                .filter(|&mb| mb > 0);
+            gpu.shared_memory_mb = read_u64(device.join("mem_info_gtt_total"))
                 .map(to_mb)
                 .filter(|&mb| mb > 0);
             // The kernel module publishes its own version for out-of-tree
@@ -293,14 +320,18 @@ pub fn gpus(ctx: &mut Ctx) -> Vec<Gpu> {
 /// \t2820  AD107M [GeForce RTX 4060 Max-Q]
 /// ```
 fn pci_device_name(vendor_id: u32, device_id: u32) -> Option<String> {
-    const DATABASES: [&str; 4] = [
+    const DATABASES: [&str; 5] = [
         "/usr/share/hwdata/pci.ids",
         "/usr/share/misc/pci.ids",
         "/usr/share/pci.ids",
         "/var/lib/pciutils/pci.ids",
+        // NixOS exposes packages only through the current system profile.
+        "/run/current-system/sw/share/hwdata/pci.ids",
     ];
 
-    let contents = DATABASES.iter().find_map(|path| std::fs::read_to_string(path).ok())?;
+    let contents = DATABASES
+        .iter()
+        .find_map(|path| std::fs::read_to_string(path).ok())?;
 
     let vendor_prefix = format!("{vendor_id:04x}");
     let device_prefix = format!("{device_id:04x}");
@@ -335,6 +366,69 @@ fn pci_device_name(vendor_id: u32, device_id: u32) -> Option<String> {
     None
 }
 
+/// Sweep the PCI bus for display-class adapters the DRM sweep missed.
+///
+/// PCI base class `0x03` covers VGA (`0x0300`), 3D (`0x0302`, the class
+/// NVIDIA datacenter cards use) and other display controllers (`0x0380`,
+/// Intel's discrete Arc line). Everything already found through DRM is
+/// skipped via its slot name.
+fn pci_class_gpus(known: &std::collections::HashSet<String>) -> Vec<Gpu> {
+    let Ok(entries) = std::fs::read_dir("/sys/bus/pci/devices") else {
+        return Vec::new();
+    };
+
+    let mut gpus: Vec<Gpu> = entries
+        .flatten()
+        .filter(|entry| {
+            known.iter().all(|slot| {
+                !entry
+                    .file_name()
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case(slot)
+            })
+        })
+        .filter_map(|entry| {
+            let path = entry.path();
+            let class = read_hex(path.join("class"))?;
+            if (class >> 16) != 0x03 {
+                return None;
+            }
+
+            let vendor_id = read_hex(path.join("vendor"))?;
+            let device_id = read_hex(path.join("device"))?;
+
+            let manufacturer = super::pci_vendor_name(vendor_id)
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("Vendor 0x{vendor_id:04X}"));
+            let model = pci_device_name(vendor_id, device_id)
+                .unwrap_or_else(|| format!("Device 0x{device_id:04X}"));
+
+            let mut gpu = blank_gpu(manufacturer, model);
+            gpu.vendor_id = Some(vendor_id);
+            gpu.vendor_id_hex = Some(format!("0x{vendor_id:04X}"));
+            gpu.device_id = Some(device_id);
+            gpu.device_id_hex = Some(format!("0x{device_id:04X}"));
+            gpu.revision = read_hex(path.join("revision"));
+            gpu.subsystem_id = read_hex(path.join("subsystem_device"))
+                .zip(read_hex(path.join("subsystem_vendor")))
+                .map(|(dev, ven)| format!("0x{dev:04X}{ven:04X}"));
+            // The directory name *is* the PCI address.
+            gpu.pci_bus = Some(entry.file_name().to_string_lossy().into_owned());
+            // Only a bound driver publishes version files; an unbound adapter
+            // reports identifiers and nothing else, which still beats being
+            // invisible.
+            gpu.driver_version = uevent_value(&path.join("uevent"), "DRIVER")
+                .and_then(|name| read_trimmed(format!("/sys/module/{name}/version")))
+                .and_then(clean);
+
+            Some(gpu)
+        })
+        .collect();
+
+    gpus.sort_by(|a, b| a.pci_bus.cmp(&b.pci_bus));
+    gpus
+}
+
 /// Read a sysfs file holding `0x1002`.
 fn read_hex(path: impl AsRef<Path>) -> Option<u32> {
     let raw = read_trimmed(path)?;
@@ -363,21 +457,26 @@ const KFD_NODES: &str = "/sys/class/kfd/kfd/topology/nodes";
 pub fn hip(ctx: &mut Ctx) -> crate::scan::compute::Hip {
     use crate::scan::compute::{gfx_name, Hip, HipDevice};
 
+    let library = find_hip_library();
+
     let mut hip = Hip {
-        rocm_version: rocm_version(),
+        // AMD's own installs stamp a release file; distro-packaged ROCm does
+        // not use /opt at all, so fall back to what the runtime library's own
+        // soname says (the two agree on major.minor).
+        rocm_version: rocm_version().or_else(|| {
+            library
+                .as_ref()
+                .and_then(|lib| lib.version.as_deref())
+                .and_then(hip_version_to_rocm)
+        }),
+        hip_version: library.as_ref().and_then(|lib| lib.version.clone()),
+        // The runtime library is what a HIP program actually loads; the kernel
+        // driver alone is not enough to run anything. Distro packages ship it
+        // as a versioned soname (`libamdhip64.so.6`) with the unversioned
+        // symlink only in the -dev package, so glob rather than test one name.
+        runtime_present: library.is_some(),
         ..Default::default()
     };
-
-    // The runtime library is what a HIP program actually loads; the kernel
-    // driver alone is not enough to run anything.
-    hip.runtime_present = [
-        "/opt/rocm/lib/libamdhip64.so",
-        "/usr/lib/x86_64-linux-gnu/libamdhip64.so",
-        "/usr/lib64/libamdhip64.so",
-        "/usr/lib/libamdhip64.so",
-    ]
-    .iter()
-    .any(|path| Path::new(path).exists());
 
     let Ok(entries) = std::fs::read_dir(KFD_NODES) else {
         // No amdkfd at all: either no AMD GPU or the driver is not loaded.
@@ -396,7 +495,7 @@ pub fn hip(ctx: &mut Ctx) -> crate::scan::compute::Hip {
         let property = |key: &str| {
             properties.lines().find_map(|line| {
                 let (name, value) = line.split_once(char::is_whitespace)?;
-                (name == key).then(|| value.trim().parse::<u64>().ok())?
+                (name == key).then(|| parse_u64_any(value.trim()))?
             })
         };
 
@@ -435,12 +534,160 @@ fn pci_address(domain: u64, location_id: u64) -> String {
 }
 
 /// ROCm stamps its release into a plain text file at install time.
+///
+/// AMD's own packages put it under `/opt/rocm`; some installs keep parallel
+/// versioned trees (`/opt/rocm-6.2.4`) without updating the symlink, so both
+/// spellings are searched.
 fn rocm_version() -> Option<String> {
-    ["/opt/rocm/.info/version", "/opt/rocm/.info/version-dev"]
+    let mut candidates = Vec::new();
+    if let Ok(entries) = std::fs::read_dir("/opt") {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            // The symlink itself plus any versioned tree next to it.
+            if name == "rocm"
+                || (name.starts_with("rocm-")
+                    && name[5..].starts_with(|c: char| c.is_ascii_digit()))
+            {
+                candidates.push(entry.path().join(".info"));
+            }
+        }
+    }
+
+    candidates
         .iter()
-        .find_map(|path| read_trimmed(path))
+        .flat_map(|dir| [dir.join("version"), dir.join("version-dev")])
+        .find_map(|path| read_trimmed(&path))
         // The file reads like "6.2.4-123"; the build suffix is noise here.
         .and_then(|raw| clean(raw.split('-').next().unwrap_or(&raw)))
+}
+
+/// The HIP runtime library as found on disk.
+#[derive(Debug, Clone)]
+struct HipLibrary {
+    /// From the soname, e.g. `"7.1.52802"`.
+    version: Option<String>,
+}
+
+/// Find `libamdhip64.so*` wherever the distro put it.
+///
+/// AMD's own installer uses `/opt/rocm/lib`. Distro packagers move it to the
+/// platform libdir — `/usr/lib64` on Fedora/RHEL, `/usr/lib/<triplet>` on
+/// Debian multiarch — and strip the unversioned symlink unless the matching
+/// `-dev`/`-devel` package is installed. The runtime is fully usable through
+/// the soname alone, so a versioned hit counts as present.
+fn find_hip_library() -> Option<HipLibrary> {
+    let mut dirs: Vec<std::path::PathBuf> = vec![
+        "/opt/rocm/lib".into(),
+        "/usr/lib64".into(),
+        "/usr/lib".into(),
+        "/usr/local/lib".into(),
+    ];
+
+    // Debian multiarch triplets vary by architecture; glob rather than
+    // hardcode x86_64.
+    if let Ok(entries) = std::fs::read_dir("/usr/lib") {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.ends_with("-linux-gnu") || name.ends_with("-linux-musl") {
+                dirs.push(entry.path());
+            }
+        }
+    }
+
+    // Parallel versioned install trees keep their own lib dir.
+    if let Ok(entries) = std::fs::read_dir("/opt") {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name != "rocm" && name.starts_with("rocm-") {
+                dirs.push(entry.path().join("lib"));
+            }
+        }
+    }
+
+    let mut best: Option<(u64, HipLibrary)> = None;
+    for dir in &dirs {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(version) = hip_version_from_filename(&name.to_string_lossy()) else {
+                continue;
+            };
+            let major = version
+                .split('.')
+                .next()
+                .and_then(|m| m.parse::<u64>().ok())
+                .unwrap_or(0);
+            let better = match &best {
+                Some((seen_major, seen)) => {
+                    // Prefer the newest major; within one, the fullest
+                    // version string (`libamdhip64.so.7.1.52802` beats its
+                    // own `.so.7` soname symlink).
+                    major > *seen_major
+                        || (major == *seen_major
+                            && seen
+                                .version
+                                .as_deref()
+                                .is_none_or(|v| version.len() > v.len()))
+                }
+                None => true,
+            };
+            if better {
+                best = Some((
+                    major,
+                    HipLibrary {
+                        version: Some(version),
+                    },
+                ));
+            }
+        }
+    }
+
+    if let Some((_, lib)) = best {
+        return Some(lib);
+    }
+
+    // Every directory listing failed, yet the unversioned dev symlink may
+    // still be directly reachable.
+    dirs.iter()
+        .find(|dir| dir.join("libamdhip64.so").exists())
+        .map(|_| HipLibrary { version: None })
+}
+
+/// `"libamdhip64.so.7.1.52802"` → `"7.1.52802"`.
+///
+/// The runtime's soname carries its full version; every distro package keeps
+/// at least the major (`libamdhip64.so.N`) even without the dev symlink.
+fn hip_version_from_filename(name: &str) -> Option<String> {
+    let rest = name.strip_prefix("libamdhip64.so")?;
+    let rest = rest.strip_prefix('.')?;
+    if rest.is_empty() || !rest.starts_with(|c: char| c.is_ascii_digit()) {
+        return None;
+    }
+    clean(rest)
+}
+
+/// HIP 6.2.41134 and ROCm 6.2.4 are the same release under different schemes:
+/// the runtime patch number is an internal build, so only major.minor carries.
+fn hip_version_to_rocm(hip_version: &str) -> Option<String> {
+    let mut parts = hip_version.split('.');
+    let major = parts.next()?;
+    let minor = parts.next()?;
+    Some(format!("{major}.{minor}"))
+}
+
+/// Parse a decimal or `0x`-prefixed hexadecimal integer.
+fn parse_u64_any(raw: &str) -> Option<u64> {
+    let raw = raw.trim();
+    if let Some(hex) = raw.strip_prefix("0x") {
+        u64::from_str_radix(hex, 16).ok()
+    } else {
+        raw.parse().ok()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -500,8 +747,6 @@ pub fn memory(ctx: &mut Ctx) -> MemoryNative {
     }
 }
 
-/// Turn one `dmidecode` "Memory Device" block into a module, skipping empty
-/// slots - `dmidecode` lists those with `Size: No Module Installed`.
 // (memory module decoding now lives in `dmi`)
 
 // ---------------------------------------------------------------------------
@@ -766,15 +1011,13 @@ fn parse_us_date(raw: &str) -> Option<String> {
     let month = parts.next()?;
     let day = parts.next()?;
     let year = parts.next()?;
-    (month.len() == 2 && day.len() == 2 && year.len() == 4)
-        .then(|| format!("{year}-{month}-{day}"))
+    (month.len() == 2 && day.len() == 2 && year.len() == 4).then(|| format!("{year}-{month}-{day}"))
 }
 
 /// The EFI `SecureBoot` variable: a four-byte attribute header then one byte of
 /// value.
 fn secure_boot() -> Option<bool> {
-    const VAR: &str =
-        "/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c";
+    const VAR: &str = "/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c";
     let bytes = std::fs::read(VAR).ok()?;
     bytes.get(4).map(|&v| v == 1)
 }
@@ -836,8 +1079,8 @@ pub fn os(_ctx: &mut Ctx) -> OsNative {
 
 /// `/etc/os-release` as key/value pairs, with the shell quoting stripped.
 fn os_release() -> HashMap<String, String> {
-    let Some(contents) = read_trimmed("/etc/os-release")
-        .or_else(|| read_trimmed("/usr/lib/os-release"))
+    let Some(contents) =
+        read_trimmed("/etc/os-release").or_else(|| read_trimmed("/usr/lib/os-release"))
     else {
         return HashMap::new();
     };
@@ -941,5 +1184,59 @@ fn container() -> Option<&'static str> {
         Some("LXC")
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{hip_version_from_filename, hip_version_to_rocm, parse_u64_any, pci_address};
+
+    #[test]
+    fn hip_runtime_versions_come_from_the_soname() {
+        // Fedora ships the full version in the real file name.
+        assert_eq!(
+            hip_version_from_filename("libamdhip64.so.7.1.52802"),
+            Some("7.1.52802".into())
+        );
+        // Debian's runtime package keeps only the soname major.
+        assert_eq!(
+            hip_version_from_filename("libamdhip64.so.6"),
+            Some("6".into())
+        );
+        assert_eq!(
+            hip_version_from_filename("libamdhip64.so"),
+            None,
+            "the unversioned dev symlink carries no version"
+        );
+        assert_eq!(hip_version_from_filename("libhsa-runtime64.so.1"), None);
+    }
+
+    #[test]
+    fn hip_major_minor_maps_to_the_rocm_release() {
+        // The runtime patch number is an internal build (41134), not the
+        // ROCm release patch (4); only major.minor is shared between them.
+        assert_eq!(hip_version_to_rocm("7.1.52802"), Some("7.1".into()));
+        assert_eq!(hip_version_to_rocm("6.2.41134"), Some("6.2".into()));
+        assert_eq!(hip_version_to_rocm("6"), None);
+    }
+
+    #[test]
+    fn kfd_properties_parse_decimal_and_hex() {
+        // Mainline kernels print `location_id` in decimal.
+        assert_eq!(parse_u64_any("2304"), Some(2304));
+        // ...but be tolerant of the hex spelling some tooling uses.
+        assert_eq!(parse_u64_any("0x900"), Some(0x900));
+        assert_eq!(parse_u64_any("nope"), None);
+    }
+
+    #[test]
+    fn kfd_location_id_decodes_to_a_pci_address() {
+        // 2304 = 0x900 → bus 09, device 00, function 0, the address of the
+        // RX 6950 XT this was captured from.
+        assert_eq!(pci_address(0, 2304), "0000:09:00.0");
+        assert_eq!(
+            pci_address(0x0001, ((0x2a << 8) | (0x10 << 3) | 0x3) as u64),
+            "0001:2a:10.3"
+        );
     }
 }

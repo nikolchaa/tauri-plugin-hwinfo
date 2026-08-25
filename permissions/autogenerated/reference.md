@@ -9,6 +9,7 @@ exposes serial numbers, MAC addresses or machine identifiers.
 Grant the individual `allow-get-*-info` permissions instead if the frontend
 only needs part of the inventory.
 
+
 #### This default permission set includes the following:
 
 - `allow-get-system-info`
