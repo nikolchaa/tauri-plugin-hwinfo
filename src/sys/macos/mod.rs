@@ -217,7 +217,14 @@ pub fn memory(ctx: &mut Ctx) -> MemoryNative {
         .filter_map(|e| e.get("_items").and_then(Value::as_array))
         .flatten()
     {
-        let Some(capacity_mb) = text(item, "dimm_size").as_deref().and_then(parse_size_mb) else {
+        // The size key is normally `dimm_size`; virtualised Macs have been
+        // seen spelling it with the data type's own name instead.
+        let capacity_mb = ["dimm_size", "SPMemoryDataType"]
+            .iter()
+            .find_map(|key| text(item, key))
+            .as_deref()
+            .and_then(parse_size_mb);
+        let Some(capacity_mb) = capacity_mb else {
             continue;
         };
         modules.push(MemoryModule {
@@ -289,7 +296,7 @@ pub fn disks(ctx: &mut Ctx) -> Vec<Disk> {
     // transport it is the only place the boot volume shows up at all.
     if disks.is_empty() {
         let storage = profiler_at(ctx, "SPStorageDataType", "disks", "full");
-        disks = sp_entries(&storage, None, false);
+        disks = sp_storage_drives(&storage);
     }
 
     if disks.is_empty() {
@@ -398,6 +405,64 @@ fn sp_drive(bus: Option<String>, is_nvme: bool, item: &Value) -> Disk {
             .map(|v| v.len() as u32),
         serial: text(item, "device_serial"),
     }
+}
+
+/// Drives derived from the storage (mounted-volume) report.
+///
+/// Its entries are volumes, several of which share one physical container:
+/// on the observed virtualised Mac, `disk3s1` and `disk3s5` both report the
+/// full 343 GB of the same APFS container. Volumes are therefore collapsed
+/// per BSD disk number, preferring the one mounted at `/`. The nested
+/// `physical_drive` object supplies what the volume entry itself lacks —
+/// medium type and partition map.
+fn sp_storage_drives(entries: &[Value]) -> Vec<Disk> {
+    let mut drives: Vec<(Option<u32>, Disk)> = Vec::new();
+
+    for entry in entries {
+        // Without a BSD name there is nothing to key a drive by.
+        let Some(bsd) = text(entry, "bsd_name") else {
+            continue;
+        };
+        let number = bsd
+            .strip_prefix("disk")
+            .map(|rest| {
+                rest.chars()
+                    .take_while(char::is_ascii_digit)
+                    .collect::<String>()
+            })
+            .and_then(|digits| digits.parse::<u32>().ok());
+
+        let mut disk = sp_drive(None, false, entry);
+        if let Some(physical) = entry.get("physical_drive") {
+            match text(physical, "medium_type").as_deref() {
+                Some(m) if m.eq_ignore_ascii_case("ssd") => disk.kind = DiskKind::Ssd,
+                Some(m) if m.eq_ignore_ascii_case("hdd") => disk.kind = DiskKind::Hdd,
+                _ => {}
+            }
+            // "unknown_partition_map_type" is this report's way of saying it
+            // does not know; that stays null like every other gap.
+            disk.partition_table = text(physical, "partition_map_type")
+                .filter(|v| !v.starts_with("unknown"))
+                .or(disk.partition_table);
+        }
+
+        match drives.iter_mut().find(|(n, _)| *n == number) {
+            // Same container as a volume seen earlier: prefer whichever of
+            // the two is mounted at "/" (the sealed system volume over some
+            // asset cryptex), otherwise keep the first.
+            Some((_, kept)) => {
+                let replaces = text(entry, "mount_point").as_deref() == Some("/");
+                if replaces {
+                    *kept = disk;
+                }
+            }
+            None => drives.push((number, disk)),
+        }
+    }
+
+    let mut out: Vec<Disk> = drives.into_iter().map(|(_, d)| d).collect();
+    out.sort_by(|a, b| a.device.cmp(&b.device));
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -539,5 +604,104 @@ pub fn os(ctx: &mut Ctx) -> OsNative {
             .then(|| "hypervisor".to_string()),
         machine_id: machine_id.flatten(),
         user: std::env::var("USER").ok().and_then(clean),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Captured verbatim from a virtualised Mac mini (`VirtualMac2,1`,
+    /// macOS 26) where the NVMe/SATA/disc reports are all empty. Locks in
+    /// both the volume-collapsing and the `physical_drive` enrichment.
+    #[test]
+    fn storage_report_volumes_collapse_to_drives() {
+        let json = r#"{
+          "SPStorageDataType": [
+            {
+              "_name": "Data",
+              "bsd_name": "disk3s5",
+              "file_system": "APFS",
+              "free_space_in_bytes": 102548193280,
+              "mount_point": "/System/Volumes/Data",
+              "physical_drive": {
+                "is_internal_disk": "yes",
+                "media_name": "AppleAPFSMedia",
+                "medium_type": "ssd",
+                "partition_map_type": "unknown_partition_map_type"
+              },
+              "size_in_bytes": 343073095680,
+              "writable": "yes"
+            },
+            {
+              "_name": "RevivalC13M302392.UC_SIRI_ASR_ASSISTANT_EN_US_EN_US_MACVM_Cryptex",
+              "bsd_name": "disk5s1",
+              "file_system": "Case-sensitive APFS",
+              "free_space_in_bytes": 22228992,
+              "mount_point": "/System/Library/AssetsV2/siri/.AssetData",
+              "physical_drive": {
+                "device_name": "Disk Image",
+                "is_internal_disk": "no",
+                "medium_type": "ssd",
+                "protocol": "Disk Image"
+              },
+              "size_in_bytes": 545259520
+            },
+            {
+              "_name": "Macintosh HD",
+              "bsd_name": "disk3s1s1",
+              "file_system": "APFS",
+              "mount_point": "/",
+              "physical_drive": {
+                "is_internal_disk": "yes",
+                "media_name": "AppleAPFSMedia",
+                "medium_type": "ssd",
+                "partition_map_type": "unknown_partition_map_type"
+              },
+              "size_in_bytes": 343073095680,
+              "writable": "no"
+            }
+          ]
+        }"#;
+        let parsed: Vec<Value> = serde_json::from_str::<serde_json::Value>(json)
+            .unwrap()
+            .get("SPStorageDataType")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap();
+
+        let drives = sp_storage_drives(&parsed);
+
+        // disk3's two volumes collapse to one entry, preferring the root;
+        // disk5 stands alone.
+        assert_eq!(drives.len(), 2);
+        let root = drives
+            .iter()
+            .find(|d| d.device == "/dev/disk3s1s1")
+            .expect("root kept");
+        assert_eq!(root.model.as_deref(), Some("Macintosh HD"));
+        assert_eq!(root.kind, DiskKind::Ssd);
+        // "unknown_partition_map_type" is a non-answer and stays null.
+        assert_eq!(root.partition_table, None);
+        assert_eq!(root.size_mb, Some(343073095680 / 1024 / 1024));
+        assert!(drives.iter().all(|d| !d.device.contains("disk3s5")));
+    }
+
+    /// Virtualised Macs spell the module size with the data type's own name.
+    #[test]
+    fn memory_size_key_variant_parses() {
+        assert_eq!(parse_size_mb("7 GB"), Some(7168));
+    }
+
+    #[test]
+    fn id_values_arrive_hex_or_decimal() {
+        assert_eq!(
+            id_value(&serde_json::json!({ "k": "0x106b" }), "k"),
+            Some(0x106b)
+        );
+        assert_eq!(
+            id_value(&serde_json::json!({ "k": "1552" }), "k"),
+            Some(1552)
+        );
     }
 }
