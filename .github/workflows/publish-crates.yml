@@ -1,0 +1,74 @@
+# Publish this package to crates.io.
+#
+# Fires automatically on a v*.*.* tag, or manually to retry a failed publish.
+# Manual runs must state the version they expect to publish; the job refuses
+# to run if the checked-out sources disagree. crates.io versions are
+# immutable - if a publish fails after landing there, bump the version rather
+# than retrying it.
+
+name: Publish (crates.io)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch, tag or commit to publish from"
+        required: false
+        default: ""
+      version:
+        description: "Expected version, e.g. 1.0.0-alpha.2 (required for manual runs)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-crates-${{ inputs.branch || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: cargo publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref }}
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            libgtk-3-dev \
+            libglib2.0-dev \
+            libgdk-pixbuf2.0-dev \
+            libwebkit2gtk-4.1-dev \
+            pkg-config
+
+      # On a tag push the expected version is the tag itself; manual runs
+      # must supply one, and either way the source has to agree.
+      - name: Verify version matches the requested release
+        run: |
+          want="${{ inputs.version || github.ref_name }}"
+          want="${want#v}"
+          have="$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
+          if [ "$want" != "$have" ]; then
+            echo "::error::requested $want but Cargo.toml says $have"
+            exit 1
+          fi
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: cargo publish --token "$CARGO_REGISTRY_TOKEN"

@@ -1,0 +1,76 @@
+# Publish the TypeScript bindings to npm.
+#
+# Fires automatically on a v*.*.* tag, or manually to retry a failed publish.
+# Pure Node job - no Rust toolchain needed, since the package ships only the
+# rollup'd contents of guest-js/. Pre-release versions (any `-` suffix) ride
+# under the `beta` dist-tag so plain installs never see them.
+
+name: Publish (npm)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch, tag or commit to publish from"
+        required: false
+        default: ""
+      version:
+        description: "Expected version, e.g. 1.0.0-alpha.2 (required for manual runs)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-npm-${{ inputs.branch || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: pnpm publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org/"
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Verify version matches the requested release
+        run: |
+          want="${{ inputs.version || github.ref_name }}"
+          want="${want#v}"
+          have="$(node -p 'require("./package.json").version')"
+          if [ "$want" != "$have" ]; then
+            echo "::error::requested $want but package.json says $have"
+            exit 1
+          fi
+
+      # Derived from package.json after the check above, so the dist-tag can
+      # never disagree with what is actually being shipped.
+      - name: Determine dist-tag
+        id: disttag
+        run: |
+          echo "tag=$(node -p 'require("./package.json").version.includes("-") ? "beta" : "latest"')" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm publish --no-git-checks --tag ${{ steps.disttag.outputs.tag }}
