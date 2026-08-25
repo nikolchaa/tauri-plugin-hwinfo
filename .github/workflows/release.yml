@@ -45,7 +45,15 @@ jobs:
       - name: Install dependencies for npm
         run: pnpm install
 
+      # Pre-release versions (1.0.0-alpha.1) must not satisfy plain
+      # `npm install`; they ride under a beta dist-tag until the version
+      # carries no suffix.
+      - name: Determine npm dist-tag
+        id: disttag
+        run: |
+          echo "tag=$(node -p 'require("./package.json").version.includes("-") ? "beta" : "latest"')" >> "$GITHUB_OUTPUT"
+
       - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: pnpm publish --no-git-checks
+        run: pnpm publish --no-git-checks --tag ${{ steps.disttag.outputs.tag }}
