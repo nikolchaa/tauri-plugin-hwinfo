@@ -1,6 +1,6 @@
 [package]
 name = "tauri-plugin-hwinfo"
-version = "1.0.0"
+version = "1.0.0-alpha.1"
 edition = "2021"
 authors = ["Nikola Ranđelović <contact@nikolchaa.com>"]
 description = "A cross-platform Tauri plugin for deep hardware and system inspection: CPU, GPU, memory, storage, network, displays, batteries, motherboard and OS."
