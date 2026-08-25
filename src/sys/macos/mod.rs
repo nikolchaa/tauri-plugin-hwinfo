@@ -301,11 +301,16 @@ fn sp_entries(entries: &[Value], bus: Option<&str>, is_nvme: bool) -> Vec<Disk> 
                     .collect::<Vec<Disk>>(),
                 // A flat entry is a drive when it carries device keys at all;
                 // anything else is a header we would mislabel.
-                None => DRIVE_KEYS
-                    .iter()
-                    .any(|key| entry.get(key).is_some_and(|v| !v.is_null()))
-                    .then(move || vec![sp_drive(bus, is_nvme, entry)])
-                    .unwrap_or_default(),
+                None => {
+                    if DRIVE_KEYS
+                        .iter()
+                        .any(|key| entry.get(key).is_some_and(|v| !v.is_null()))
+                    {
+                        vec![sp_drive(bus, is_nvme, entry)]
+                    } else {
+                        Vec::new()
+                    }
+                }
             }
         })
         .collect()

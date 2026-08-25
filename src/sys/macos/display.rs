@@ -135,11 +135,11 @@ fn build(id: CGDirectDisplayID, main: CGDirectDisplayID) -> DisplayNative {
     let model = if builtin {
         Some("Built-in Display".to_string())
     } else {
-        Some(
-            usable(product)
-                .then(|| format!("Display {product:04X}"))
-                .unwrap_or_else(|| "External Display".to_string()),
-        )
+        Some(if usable(product) {
+            format!("Display {product:04X}")
+        } else {
+            "External Display".to_string()
+        })
     };
 
     DisplayNative {
