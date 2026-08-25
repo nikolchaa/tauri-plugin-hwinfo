@@ -283,3 +283,94 @@ fn summary_is_substantially_cheaper_than_full() {
         full.scan.duration_ms
     );
 }
+
+// ---------------------------------------------------------------------------
+// Shape contract: the same keys must serialize on every platform, with nulls
+// standing in for platform gaps. These tests fail if anyone adds a
+// `skip_serializing_if`, omits a field on one backend's path, or renames a
+// field without updating the contract.
+// ---------------------------------------------------------------------------
+
+const DISK_KEYS: [&str; 11] = [
+    "device",
+    "model",
+    "vendor",
+    "kind",
+    "bus",
+    "sizeMb",
+    "firmwareRevision",
+    "isRemovable",
+    "partitionTable",
+    "partitionCount",
+    "serial",
+];
+
+const GPU_KEYS: [&str; 17] = [
+    "manufacturer",
+    "model",
+    "kind",
+    "vendorId",
+    "vendorIdHex",
+    "deviceId",
+    "deviceIdHex",
+    "subsystemId",
+    "revision",
+    "vramMb",
+    "sharedMemoryMb",
+    "driverVersion",
+    "driverDate",
+    "pciBus",
+    "currentResolution",
+    "api",
+    "uuid",
+];
+
+const GPU_API_KEYS: [&str; 15] = [
+    "vulkan",
+    "vulkanVersion",
+    "vulkanDriver",
+    "cuda",
+    "cudaVersion",
+    "computeCapability",
+    "hip",
+    "hipVersion",
+    "rocmVersion",
+    "gfxArchitecture",
+    "directxFeatureLevel",
+    "metal",
+    "opencl",
+    "openclVersion",
+    "openglVersion",
+];
+
+fn assert_shape<T: serde::Serialize>(value: &T, expected: &[&str], label: &str) {
+    let json = serde_json::to_value(value).expect("serializable");
+    let object = json
+        .as_object()
+        .unwrap_or_else(|| panic!("{label} did not serialize to a JSON object"));
+    let mut actual: Vec<&str> = object.keys().map(String::as_str).collect();
+    let mut wanted: Vec<&str> = expected.to_vec();
+    actual.sort_unstable();
+    wanted.sort_unstable();
+    assert_eq!(
+        actual, wanted,
+        "{label} JSON shape drifted from the contract"
+    );
+}
+
+#[test]
+fn disk_entries_serialize_the_contract_shape() {
+    let info = scan_at(DetailLevel::Full, &[Section::Storage]);
+    for disk in info.storage.iter().flat_map(|s| &s.disks) {
+        assert_shape(disk, &DISK_KEYS, "disk");
+    }
+}
+
+#[test]
+fn gpu_entries_serialize_the_contract_shape() {
+    let info = scan_at(DetailLevel::Capabilities, &[Section::Gpu]);
+    for gpu in info.gpu.iter().flatten() {
+        assert_shape(gpu, &GPU_KEYS, "gpu");
+        assert_shape(&gpu.api, &GPU_API_KEYS, "gpu.api");
+    }
+}

@@ -81,7 +81,10 @@ fn merge(ctx: &Ctx, monitor: Option<&MonitorHint>, native: DisplayNative) -> Dis
     };
 
     Display {
-        name: native.name.clone().or_else(|| monitor.and_then(|m| m.name.clone())),
+        name: native
+            .name
+            .clone()
+            .or_else(|| monitor.and_then(|m| m.name.clone())),
         manufacturer: native.manufacturer,
         model: native.model,
         resolution: Resolution {

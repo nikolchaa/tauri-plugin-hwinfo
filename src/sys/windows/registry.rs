@@ -9,7 +9,7 @@ use windows::Win32::System::Registry::{
     RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_BINARY, RRF_RT_REG_DWORD, RRF_RT_REG_SZ,
 };
 use windows::Win32::System::SystemInformation::{
-    GetFirmwareType, FirmwareTypeBios, FirmwareTypeUefi, FIRMWARE_TYPE,
+    FirmwareTypeBios, FirmwareTypeUefi, GetFirmwareType, FIRMWARE_TYPE,
 };
 
 use crate::scan::clean;

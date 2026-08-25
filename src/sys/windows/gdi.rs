@@ -118,9 +118,8 @@ fn monitor_key(adapter: PCWSTR) -> Option<String> {
         ..Default::default()
     };
 
-    let ok = unsafe {
-        EnumDisplayDevicesW(adapter, 0, &mut monitor, EDD_GET_DEVICE_INTERFACE_NAME)
-    };
+    let ok =
+        unsafe { EnumDisplayDevicesW(adapter, 0, &mut monitor, EDD_GET_DEVICE_INTERFACE_NAME) };
     if !ok.as_bool() || monitor.StateFlags.0 & DISPLAY_DEVICE_ACTIVE.0 == 0 {
         return None;
     }

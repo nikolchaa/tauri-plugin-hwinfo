@@ -84,7 +84,9 @@ pub fn edid_vendor_code(packed: u16) -> Option<String> {
     }
     let letter = |shift: u16| {
         let value = ((packed >> shift) & 0x1F) as u8;
-        (1..=26).contains(&value).then(|| (b'A' + value - 1) as char)
+        (1..=26)
+            .contains(&value)
+            .then(|| (b'A' + value - 1) as char)
     };
     Some([letter(10)?, letter(5)?, letter(0)?].into_iter().collect())
 }

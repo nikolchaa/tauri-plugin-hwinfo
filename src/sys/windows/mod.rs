@@ -95,7 +95,9 @@ fn query_where(
             Vec::new()
         }
         Err(e) => {
-            ctx.warn(format!("{probe}: could not connect to WMI `{namespace}` ({e})"));
+            ctx.warn(format!(
+                "{probe}: could not connect to WMI `{namespace}` ({e})"
+            ));
             Vec::new()
         }
     }
@@ -285,11 +287,9 @@ pub fn gpus(ctx: &mut Ctx) -> Vec<Gpu> {
         let matched = controllers.iter().find(|row| {
             row.text("PNPDeviceID").is_some_and(|id| {
                 let id = id.to_ascii_uppercase();
-                gpu.vendor_id
-                    .zip(gpu.device_id)
-                    .is_some_and(|(v, d)| {
-                        id.contains(&format!("VEN_{v:04X}")) && id.contains(&format!("DEV_{d:04X}"))
-                    })
+                gpu.vendor_id.zip(gpu.device_id).is_some_and(|(v, d)| {
+                    id.contains(&format!("VEN_{v:04X}")) && id.contains(&format!("DEV_{d:04X}"))
+                })
             })
         });
 
@@ -351,8 +351,7 @@ pub fn hip(_ctx: &mut Ctx) -> crate::scan::compute::Hip {
     // The version lives in the install path rather than any queryable field.
     let rocm_version = root.as_ref().and_then(|r| {
         let name = r.file_name().or_else(|| r.parent()?.file_name())?;
-        clean(name.to_string_lossy())
-            .filter(|v| v.starts_with(|c: char| c.is_ascii_digit()))
+        clean(name.to_string_lossy()).filter(|v| v.starts_with(|c: char| c.is_ascii_digit()))
     });
 
     Hip {
@@ -415,29 +414,29 @@ pub fn memory(ctx: &mut Ctx) -> MemoryNative {
         "memory modules",
     )
     .iter()
-        .map(|row| MemoryModule {
-            slot: row.text("DeviceLocator"),
-            bank: row.text("BankLabel"),
-            manufacturer: row.text("Manufacturer"),
-            part_number: row.text("PartNumber"),
-            capacity_mb: row.number("Capacity").map(to_mb),
-            speed_mts: row.number("Speed").map(|v| v as u32),
-            configured_speed_mts: row.number("ConfiguredClockSpeed").map(|v| v as u32),
-            memory_type: row
-                .number("SMBIOSMemoryType")
-                .and_then(smbios_memory_type)
-                .map(str::to_string),
-            form_factor: row
-                .number("FormFactor")
-                .and_then(form_factor)
-                .map(str::to_string),
-            voltage_mv: row.number("ConfiguredVoltage").map(|v| v as u32),
-            rank: None,
-            data_width_bits: row.number("DataWidth").map(|v| v as u32),
-            total_width_bits: row.number("TotalWidth").map(|v| v as u32),
-            serial: row.text("SerialNumber"),
-        })
-        .collect::<Vec<_>>();
+    .map(|row| MemoryModule {
+        slot: row.text("DeviceLocator"),
+        bank: row.text("BankLabel"),
+        manufacturer: row.text("Manufacturer"),
+        part_number: row.text("PartNumber"),
+        capacity_mb: row.number("Capacity").map(to_mb),
+        speed_mts: row.number("Speed").map(|v| v as u32),
+        configured_speed_mts: row.number("ConfiguredClockSpeed").map(|v| v as u32),
+        memory_type: row
+            .number("SMBIOSMemoryType")
+            .and_then(smbios_memory_type)
+            .map(str::to_string),
+        form_factor: row
+            .number("FormFactor")
+            .and_then(form_factor)
+            .map(str::to_string),
+        voltage_mv: row.number("ConfiguredVoltage").map(|v| v as u32),
+        rank: None,
+        data_width_bits: row.number("DataWidth").map(|v| v as u32),
+        total_width_bits: row.number("TotalWidth").map(|v| v as u32),
+        serial: row.text("SerialNumber"),
+    })
+    .collect::<Vec<_>>();
 
     MemoryNative {
         slots_used: Some(modules.len() as u32),
@@ -548,46 +547,48 @@ pub fn disks(ctx: &mut Ctx) -> Vec<Disk> {
         "disks",
     )
     .iter()
-        .map(|row| {
-            let index = row.number("Index");
-            let extra = physical.iter().find(|p| {
-                p.text("DeviceId")
-                    .and_then(|d| d.parse::<u64>().ok())
-                    .is_some_and(|d| Some(d) == index)
-            });
+    .map(|row| {
+        let index = row.number("Index");
+        let extra = physical.iter().find(|p| {
+            p.text("DeviceId")
+                .and_then(|d| d.parse::<u64>().ok())
+                .is_some_and(|d| Some(d) == index)
+        });
 
-            let kind = extra
-                .and_then(|p| p.number("MediaType"))
-                .map(|m| match m {
-                    3 => DiskKind::Hdd,
-                    4 => DiskKind::Ssd,
-                    _ => DiskKind::Unknown,
-                })
-                .unwrap_or(DiskKind::Unknown);
+        let kind = extra
+            .and_then(|p| p.number("MediaType"))
+            .map(|m| match m {
+                3 => DiskKind::Hdd,
+                4 => DiskKind::Ssd,
+                _ => DiskKind::Unknown,
+            })
+            .unwrap_or(DiskKind::Unknown);
 
-            Disk {
-                device: row
-                    .text("DeviceID")
-                    .unwrap_or_else(|| "\\\\.\\PHYSICALDRIVE?".into()),
-                model: row.text("Model"),
-                vendor: extra.and_then(|p| p.text("Manufacturer")).or_else(|| row.text("Manufacturer")),
-                kind,
-                bus: extra
-                    .and_then(|p| p.number("BusType"))
-                    .and_then(bus_type)
-                    .map(str::to_string)
-                    .or_else(|| row.text("InterfaceType")),
-                size_mb: row.number("Size").map(to_mb),
-                firmware_revision: row.text("FirmwareRevision"),
-                is_removable: row
-                    .text("MediaType")
-                    .map(|m| m.to_ascii_lowercase().contains("removable")),
-                partition_table: None,
-                partition_count: row.number("Partitions").map(|v| v as u32),
-                serial: row.text("SerialNumber"),
-            }
-        })
-        .collect()
+        Disk {
+            device: row
+                .text("DeviceID")
+                .unwrap_or_else(|| "\\\\.\\PHYSICALDRIVE?".into()),
+            model: row.text("Model"),
+            vendor: extra
+                .and_then(|p| p.text("Manufacturer"))
+                .or_else(|| row.text("Manufacturer")),
+            kind,
+            bus: extra
+                .and_then(|p| p.number("BusType"))
+                .and_then(bus_type)
+                .map(str::to_string)
+                .or_else(|| row.text("InterfaceType")),
+            size_mb: row.number("Size").map(to_mb),
+            firmware_revision: row.text("FirmwareRevision"),
+            is_removable: row
+                .text("MediaType")
+                .map(|m| m.to_ascii_lowercase().contains("removable")),
+            partition_table: None,
+            partition_count: row.number("Partitions").map(|v| v as u32),
+            serial: row.text("SerialNumber"),
+        }
+    })
+    .collect()
 }
 
 /// `MSFT_PhysicalDisk::BusType` values.
@@ -646,22 +647,22 @@ pub fn network(ctx: &mut Ctx) -> HashMap<String, NetNative> {
         "network",
     )
     .iter()
-        .filter_map(|row| {
-            // `sysinfo` keys interfaces by the connection name Windows shows in
-            // Network Connections, which is NetConnectionID.
-            let name = row.text("NetConnectionID").or_else(|| row.text("Name"))?;
-            Some((
-                name,
-                NetNative {
-                    description: row.text("Description").or_else(|| row.text("ProductName")),
-                    speed_mbps: row
-                        .number("Speed")
-                        .filter(|&s| s > 0)
-                        .map(|bits_per_sec| bits_per_sec / 1_000_000),
-                },
-            ))
-        })
-        .collect()
+    .filter_map(|row| {
+        // `sysinfo` keys interfaces by the connection name Windows shows in
+        // Network Connections, which is NetConnectionID.
+        let name = row.text("NetConnectionID").or_else(|| row.text("Name"))?;
+        Some((
+            name,
+            NetNative {
+                description: row.text("Description").or_else(|| row.text("ProductName")),
+                speed_mbps: row
+                    .number("Speed")
+                    .filter(|&s| s > 0)
+                    .map(|bits_per_sec| bits_per_sec / 1_000_000),
+            },
+        ))
+    })
+    .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -754,7 +755,9 @@ fn normalise_instance(raw: &str) -> String {
         .split_once("\\{")
         .map(|(head, _)| head)
         .unwrap_or(without_prefix);
-    core.trim_end_matches("_0").trim_end_matches('\\').to_string()
+    core.trim_end_matches("_0")
+        .trim_end_matches('\\')
+        .to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -826,10 +829,7 @@ pub fn board(ctx: &mut Ctx) -> Board {
 
     let bios = Bios {
         vendor: bios_row.and_then(|r| r.text("Manufacturer")),
-        version: bios_row.and_then(|r| {
-            r.text("SMBIOSBIOSVersion")
-                .or_else(|| r.text("Version"))
-        }),
+        version: bios_row.and_then(|r| r.text("SMBIOSBIOSVersion").or_else(|| r.text("Version"))),
         release_date: bios_row
             .and_then(|r| r.text("ReleaseDate"))
             .as_deref()

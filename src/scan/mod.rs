@@ -230,7 +230,10 @@ mod tests {
     #[test]
     fn clean_keeps_real_values() {
         assert_eq!(clean("AMD Ryzen 9 5900X"), Some("AMD Ryzen 9 5900X".into()));
-        assert_eq!(clean("  X570 AORUS ELITE \0"), Some("X570 AORUS ELITE".into()));
+        assert_eq!(
+            clean("  X570 AORUS ELITE \0"),
+            Some("X570 AORUS ELITE".into())
+        );
         // Leading zeroes are fine as long as the value is not *all* zeroes.
         assert_eq!(clean("0x00004119"), Some("0x00004119".into()));
         assert_eq!(clean("0001"), Some("0001".into()));

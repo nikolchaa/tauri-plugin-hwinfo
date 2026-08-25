@@ -255,62 +255,60 @@ pub fn disks(ctx: &mut Ctx) -> Vec<Disk> {
     }
 
     // NVMe and SATA drives live under separate data types.
-    let mut controllers = profiler(ctx, "SPNVMeDataType", "disks");
-    controllers.extend(profiler(ctx, "SPSerialATADataType", "disks"));
+    let nvme = profiler(ctx, "SPNVMeDataType", "disks");
+    let sata = profiler(ctx, "SPSerialATADataType", "disks");
 
-    let mut disks: Vec<Disk> = controllers
-        .iter()
-        .flat_map(|controller| {
-            let name = text(controller, "_name");
-            let is_nvme = name
-                .as_deref()
-                .is_some_and(|b| b.to_ascii_uppercase().contains("NVME"));
-            controller
-                .get("_items")
-                .and_then(Value::as_array)
-                .map(|items| (name, is_nvme, items))
-        })
-        .flat_map(|(name, is_nvme, items)| {
-            let bus = if is_nvme {
-                Some("NVMe".into())
-            } else {
-                name.map(|_| "SATA".into())
-            };
-            items
-                .iter()
-                .map(move |item| sp_drive(bus.clone(), is_nvme, item))
-        })
-        .collect();
+    // The NVMe report lists drives flat at the top level; the SATA report
+    // nests them beneath their controllers. Accepting both shapes everywhere
+    // costs nothing and survives Apple reshuffling the nesting again.
+    let mut disks: Vec<Disk> = sp_entries(&nvme, Some("NVMe"), true);
+    disks.extend(sp_entries(&sata, Some("SATA"), false));
 
     // Virtualised Macs present their disks through neither NVMe nor SATA, and
     // USB card readers never appear there either; the generic disc report is
     // the catch-all both fall back to.
     if disks.is_empty() {
-        disks = profiler(ctx, "SPDiscDataType", "disks")
-            .iter()
-            .filter_map(|controller| {
-                let name = text(controller, "_name")?;
-                let bus = if name.to_ascii_uppercase().contains("USB") {
-                    Some("USB".into())
-                } else {
-                    None
-                };
-                let items = controller.get("_items").and_then(Value::as_array)?;
-                Some(
-                    items
-                        .iter()
-                        .map(move |item| sp_drive(bus.clone(), false, item)),
-                )
-            })
-            .flatten()
-            .collect();
+        let disc = profiler(ctx, "SPDiscDataType", "disks");
+        disks = sp_entries(&disc, None, false);
     }
 
     if disks.is_empty() {
-        ctx.warn("disks: no storage devices were reported");
+        ctx.warn(
+            "disks: no drives could be parsed from system_profiler; the report layout may have \
+             changed",
+        );
     }
 
     disks
+}
+
+/// Collect drives from one `system_profiler` report.
+///
+/// Entries either carry their drives in an `_items` array (the SATA shape) or
+/// are themselves the drive (the NVMe shape). `bus` labels every drive found;
+/// `is_nvme` only settles SSD-vs-HDD for entries that spell no medium type.
+fn sp_entries(entries: &[Value], bus: Option<&str>, is_nvme: bool) -> Vec<Disk> {
+    const DRIVE_KEYS: [&str; 4] = ["bsd_name", "device_model", "capacity_in_bytes", "size"];
+
+    entries
+        .iter()
+        .flat_map(|entry| {
+            let bus = bus.map(str::to_string);
+            match entry.get("_items").and_then(Value::as_array) {
+                Some(items) => items
+                    .iter()
+                    .map(move |item| sp_drive(bus.clone(), is_nvme, item))
+                    .collect::<Vec<Disk>>(),
+                // A flat entry is a drive when it carries device keys at all;
+                // anything else is a header we would mislabel.
+                None => DRIVE_KEYS
+                    .iter()
+                    .any(|key| entry.get(key).is_some_and(|v| !v.is_null()))
+                    .then(move || vec![sp_drive(bus, is_nvme, entry)])
+                    .unwrap_or_default(),
+            }
+        })
+        .collect()
 }
 
 /// One drive out of a `system_profiler` `_items` array.
@@ -336,7 +334,8 @@ fn sp_drive(bus: Option<String>, is_nvme: bool, item: &Value) -> Disk {
         },
         bus,
         // The reports either spell a human-readable size ("500 GB") or raw
-        // bytes; builds have drifted between the two spellings.
+        // bytes; builds have drifted between the two spellings, and the
+        // byte fields arrive sometimes as numbers and sometimes as strings.
         size_mb: ["size", "capacity"]
             .iter()
             .find_map(|key| text(item, key))
@@ -345,7 +344,13 @@ fn sp_drive(bus: Option<String>, is_nvme: bool, item: &Value) -> Disk {
             .or_else(|| {
                 ["size_in_bytes", "capacity_in_bytes"]
                     .iter()
-                    .find_map(|key| item.get(key).and_then(Value::as_u64))
+                    .find_map(|key| {
+                        item.get(key).and_then(|value| match value {
+                            Value::Number(n) => n.as_u64(),
+                            Value::String(s) => s.trim().parse().ok(),
+                            _ => None,
+                        })
+                    })
                     .map(to_mb)
             }),
         firmware_revision: text(item, "device_revision"),

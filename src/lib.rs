@@ -169,9 +169,9 @@ impl<R: Runtime> Hwinfo<R> {
                 .unwrap_or_default()
                 .into_iter()
                 .map(|m| {
-                    let is_primary = primary.as_ref().is_some_and(|p| {
-                        p.name() == m.name() && p.position() == m.position()
-                    });
+                    let is_primary = primary
+                        .as_ref()
+                        .is_some_and(|p| p.name() == m.name() && p.position() == m.position());
                     MonitorHint {
                         name: m.name().cloned(),
                         width: m.size().width,

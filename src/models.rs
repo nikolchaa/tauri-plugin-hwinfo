@@ -53,9 +53,7 @@ impl ScanMode {
 /// Orthogonal to [`ScanMode`], which governs *identity* rather than *effort*.
 /// The variants are ordered, so a collector asks `detail >= Capabilities`
 /// rather than matching every level.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DetailLevel {
     /// Whatever can be read essentially for free: `CPUID`, the registry and

@@ -13,13 +13,9 @@ pub fn collect(ctx: &mut Ctx) -> Vec<NetworkInterface> {
         .iter()
         .map(|(name, data)| {
             let extra = native.get(name).cloned().unwrap_or_default();
-            let mac = (!data.mac_address().is_unspecified())
-                .then(|| data.mac_address().to_string());
-            let ips: Vec<String> = data
-                .ip_networks()
-                .iter()
-                .map(|n| n.to_string())
-                .collect();
+            let mac =
+                (!data.mac_address().is_unspecified()).then(|| data.mac_address().to_string());
+            let ips: Vec<String> = data.ip_networks().iter().map(|n| n.to_string()).collect();
 
             NetworkInterface {
                 name: name.clone(),

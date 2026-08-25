@@ -123,7 +123,9 @@ fn build(
 
     let sampled: Vec<f32> = cores.iter().filter_map(|c| c.usage_percent).collect();
     let usage = if sampled.is_empty() {
-        (package_count == 1).then_some(portable.global_usage).flatten()
+        (package_count == 1)
+            .then_some(portable.global_usage)
+            .flatten()
     } else {
         Some(sampled.iter().sum::<f32>() / sampled.len() as f32)
     };
@@ -296,8 +298,8 @@ impl CpuIdFacts {
         }
 
         if let Some(f) = cpuid.get_processor_frequency_info() {
-            out.base_frequency = (f.processor_base_frequency() > 0)
-                .then_some(f.processor_base_frequency() as u32);
+            out.base_frequency =
+                (f.processor_base_frequency() > 0).then_some(f.processor_base_frequency() as u32);
             out.max_frequency =
                 (f.processor_max_frequency() > 0).then_some(f.processor_max_frequency() as u32);
         }

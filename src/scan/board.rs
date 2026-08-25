@@ -20,13 +20,22 @@ pub fn collect(ctx: &mut Ctx) -> Board {
     }
 
     let s = &mut board.system;
-    s.manufacturer = s.manufacturer.take().or_else(|| clean_opt(Product::vendor_name()));
+    s.manufacturer = s
+        .manufacturer
+        .take()
+        .or_else(|| clean_opt(Product::vendor_name()));
     s.product = s.product.take().or_else(|| clean_opt(Product::name()));
     s.version = s.version.take().or_else(|| clean_opt(Product::version()));
     s.family = s.family.take().or_else(|| clean_opt(Product::family()));
-    s.sku = s.sku.take().or_else(|| clean_opt(Product::stock_keeping_unit()));
+    s.sku = s
+        .sku
+        .take()
+        .or_else(|| clean_opt(Product::stock_keeping_unit()));
     s.uuid = s.uuid.take().or_else(|| clean_opt(Product::uuid()));
-    s.serial = s.serial.take().or_else(|| clean_opt(Product::serial_number()));
+    s.serial = s
+        .serial
+        .take()
+        .or_else(|| clean_opt(Product::serial_number()));
 
     if !ctx.mode.is_unsafe() {
         board.serial = None;

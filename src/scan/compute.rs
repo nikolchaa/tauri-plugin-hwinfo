@@ -90,8 +90,7 @@ pub fn opencl(ctx: &mut Ctx) -> OpenCl {
         &["libOpenCL.so.1", "libOpenCL.so"]
     };
 
-    type ClGetPlatformIDs =
-        unsafe extern "C" fn(u32, *mut *mut c_void, *mut u32) -> i32;
+    type ClGetPlatformIDs = unsafe extern "C" fn(u32, *mut *mut c_void, *mut u32) -> i32;
     type ClGetPlatformInfo =
         unsafe extern "C" fn(*mut c_void, u32, usize, *mut c_void, *mut usize) -> i32;
     const CL_PLATFORM_VERSION: u32 = 0x0901;
@@ -143,14 +142,15 @@ pub fn opencl(ctx: &mut Ctx) -> OpenCl {
                             buffer.as_mut_ptr().cast(),
                             &mut written,
                         );
-                        (status == 0).then(|| {
-                            let text = String::from_utf8_lossy(
-                                &buffer[..written.saturating_sub(1).min(buffer.len())],
-                            );
-                            // "OpenCL 3.0 CUDA 12.4.131" -> "3.0"
-                            clean(text.split_whitespace().nth(1).unwrap_or(text.trim()))
-                        })
-                        .flatten()
+                        (status == 0)
+                            .then(|| {
+                                let text = String::from_utf8_lossy(
+                                    &buffer[..written.saturating_sub(1).min(buffer.len())],
+                                );
+                                // "OpenCL 3.0 CUDA 12.4.131" -> "3.0"
+                                clean(text.split_whitespace().nth(1).unwrap_or(text.trim()))
+                            })
+                            .flatten()
                     })
                     .max()
             });

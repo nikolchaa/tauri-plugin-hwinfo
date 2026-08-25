@@ -5,8 +5,9 @@ use crate::models::*;
 use crate::sys;
 
 pub fn collect(ctx: &mut Ctx) -> Memory {
-    let sys_info =
-        System::new_with_specifics(RefreshKind::nothing().with_memory(MemoryRefreshKind::everything()));
+    let sys_info = System::new_with_specifics(
+        RefreshKind::nothing().with_memory(MemoryRefreshKind::everything()),
+    );
 
     let native = sys::memory(ctx);
     let mut modules = native.modules;

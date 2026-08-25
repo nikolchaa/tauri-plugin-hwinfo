@@ -22,6 +22,11 @@ Two rules hold everywhere:
 2. **Sizes are mebibytes** (`*Mb`), **clocks are MHz**, **memory speeds are
    MT/s**, **dates are ISO-8601**.
 
+And one guarantee about shape: **every payload has exactly the same keys on
+every platform and every variant of machine.** A probe that found nothing
+yields an empty array or a `null` value, never a missing field, so consumers
+can write one renderer per section and trust it everywhere.
+
 ---
 
 ## `scan` — `ScanMeta`
@@ -159,18 +164,22 @@ All require `detail: "full"`.
 
 All require `detail: "full"`.
 
+macOS sources drives from `system_profiler`'s NVMe and SATA reports, falling
+back to its generic disc report on virtualised machines and for USB readers;
+Linux reads `/sys/block`; Windows merges two WMI classes.
+
 | Field | Type | Win | Linux | macOS | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `device` | `string` | ✅ | ✅ | ✅ | `"\\\\.\\PHYSICALDRIVE0"`, `"/dev/nvme0n1"`. |
+| `device` | `string` | ✅ | ✅ | ✅ | `"\\\\.\\PHYSICALDRIVE0"`, `"/dev/nvme0n1"`; macOS falls back to the drive's `_name` when no BSD name is reported. |
 | `model` / `vendor` | `string?` | ✅ | ✅ | ✅ | |
-| `kind` | `DiskKind` | ✅ | ✅ | ✅ | `hdd`/`ssd`/`unknown`. |
-| `bus` | `string?` | ✅ | ✅ | ✅ | `"NVMe"`, `"SATA"`, `"USB"`. |
+| `kind` | `DiskKind` | ✅ | ✅ | ⚠️ | `hdd`/`ssd`/`unknown`. macOS answers `unknown` when the report spells no medium type (some SATA and all generic-disc entries). |
+| `bus` | `string?` | ✅ | ⚠️ | ⚠️ | `"NVMe"`, `"SATA"`, `"USB"`. Linux leaves it null for device-tree paths it does not recognise; macOS null for generic-disc entries. |
 | `sizeMb` | `number?` | ✅ | ✅ | ✅ | Raw capacity. |
 | `firmwareRevision` | `string?` | ✅ | ✅ | ✅ | |
 | `isRemovable` | `boolean?` | ✅ | ✅ | ✅ | |
-| `partitionTable` | `string?` | ❌ | ❌ | ✅ | `"GPT"`, `"MBR"`. |
-| `partitionCount` | `number?` | ✅ | ✅ | ✅ | |
-| `serial` | `string?` | ✅ | ⚠️ | ✅ | *Identifying.* |
+| `partitionTable` | `string?` | ❌ | ❌ | ⚠️ | `"GPT"`, `"MBR"`. macOS only where the report spells it. |
+| `partitionCount` | `number?` | ✅ | ✅ | ⚠️ | macOS only where a volumes list is reported. |
+| `serial` | `string?` | ✅ | ⚠️ | ✅ | *Identifying.* Linux needs root for NVMe serials. |
 
 ## `network[]` — `NetworkInterface`
 
