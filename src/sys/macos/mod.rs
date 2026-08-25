@@ -278,16 +278,24 @@ pub fn disks(ctx: &mut Ctx) -> Vec<Disk> {
 
     // Virtualised Macs present their disks through neither NVMe nor SATA, and
     // USB card readers never appear there either; the generic disc report is
-    // the catch-all both fall back to.
+    // the first catch-all both fall back to.
     if disks.is_empty() {
         let disc = profiler_at(ctx, "SPDiscDataType", "disks", "full");
         disks = sp_entries(&disc, None, false);
     }
 
+    // Last resort: the storage report describes mounted volumes rather than
+    // drives, but on machines whose virtual disk appears in no hardware
+    // transport it is the only place the boot volume shows up at all.
+    if disks.is_empty() {
+        let storage = profiler_at(ctx, "SPStorageDataType", "disks", "full");
+        disks = sp_entries(&storage, None, false);
+    }
+
     if disks.is_empty() {
         ctx.warn(
-            "disks: no drives could be parsed from system_profiler; the report layout may have \
-             changed",
+            "disks: no drives could be parsed from any system_profiler report (NVMe, SATA, \
+             generic disc, storage); the report layout may have changed",
         );
     }
 
@@ -300,7 +308,17 @@ pub fn disks(ctx: &mut Ctx) -> Vec<Disk> {
 /// are themselves the drive (the NVMe shape). `bus` labels every drive found;
 /// `is_nvme` only settles SSD-vs-HDD for entries that spell no medium type.
 fn sp_entries(entries: &[Value], bus: Option<&str>, is_nvme: bool) -> Vec<Disk> {
-    const DRIVE_KEYS: [&str; 4] = ["bsd_name", "device_model", "capacity_in_bytes", "size"];
+    // A flat entry counts as a drive when it carries any of these; volume
+    // entries from the storage report qualify through their filesystem keys.
+    const DRIVE_KEYS: [&str; 7] = [
+        "bsd_name",
+        "device_model",
+        "capacity_in_bytes",
+        "size",
+        "free_space_in_bytes",
+        "mount_point",
+        "file_system",
+    ];
 
     entries
         .iter()

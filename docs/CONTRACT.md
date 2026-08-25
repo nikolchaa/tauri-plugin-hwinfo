@@ -165,7 +165,8 @@ All require `detail: "full"`.
 All require `detail: "full"`.
 
 macOS sources drives from `system_profiler`'s NVMe and SATA reports, falling
-back to its generic disc report on virtualised machines and for USB readers;
+back to its generic disc report, then its storage (mounted-volume) report on
+machines — mostly virtualised — whose disk appears in no hardware transport;
 Linux reads `/sys/block`; Windows merges two WMI classes.
 
 | Field | Type | Win | Linux | macOS | Notes |

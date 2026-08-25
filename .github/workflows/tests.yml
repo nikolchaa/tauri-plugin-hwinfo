@@ -25,6 +25,11 @@ on:
         type: boolean
         required: false
         default: true
+      profiler-dump:
+        description: "macOS: print raw system_profiler JSON for the disk/memory reports"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -66,6 +71,18 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libdbus-1-dev \
             pkg-config
+
+      # Ground truth for report-shape questions. The parsers in
+      # src/sys/macos/mod.rs are written against these documents; when Apple
+      # reshuffles keys, this output is the spec.
+      - name: Dump system_profiler reports (macOS diagnostics)
+        if: runner.os == 'macOS' && inputs.profiler-dump
+        run: |
+          for dt in SPNVMeDataType SPSerialATADataType SPDiscDataType SPStorageDataType SPMemoryDataType; do
+            echo "=== $dt ==="
+            system_profiler -json -detailLevel full "$dt" 2>/dev/null | head -c 4000 || true
+            echo
+          done
 
       - name: Build (all targets, all features)
         run: cargo build --all-targets --all-features
