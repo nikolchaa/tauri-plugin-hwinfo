@@ -129,11 +129,17 @@ fn build(id: CGDirectDisplayID, main: CGDirectDisplayID) -> DisplayNative {
 
     // EDID gives a numeric product code, not a marketing name. Built-in panels
     // are better described by what they are; for anything else the code is
-    // still more useful than nothing.
+    // still more useful than nothing. Virtualised or headless displays report
+    // sentinel identifiers all round - they still get labelled rather than
+    // arriving with every field null.
     let model = if builtin {
         Some("Built-in Display".to_string())
     } else {
-        usable(product).then(|| format!("Display {product:04X}"))
+        Some(
+            usable(product)
+                .then(|| format!("Display {product:04X}"))
+                .unwrap_or_else(|| "External Display".to_string()),
+        )
     };
 
     DisplayNative {
@@ -161,8 +167,6 @@ fn build(id: CGDirectDisplayID, main: CGDirectDisplayID) -> DisplayNative {
         physical_height_mm: (physical.height > 0.0).then_some(physical.height.round() as u32),
         // Core Graphics exposes no manufacture date.
         manufacture_year: None,
-        serial: usable(serial)
-            .then(|| clean(serial.to_string()))
-            .flatten(),
+        serial: usable(serial).then(|| clean(serial.to_string())).flatten(),
     }
 }

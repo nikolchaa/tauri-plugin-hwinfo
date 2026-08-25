@@ -78,7 +78,6 @@ fn id_value(value: &Value, key: &str) -> Option<u32> {
     }
 }
 
-
 /// `"8 GB"`, `"1536 MB"` → mebibytes.
 fn parse_size_mb(raw: &str) -> Option<u64> {
     let mut parts = raw.split_whitespace();
@@ -259,58 +258,105 @@ pub fn disks(ctx: &mut Ctx) -> Vec<Disk> {
     let mut controllers = profiler(ctx, "SPNVMeDataType", "disks");
     controllers.extend(profiler(ctx, "SPSerialATADataType", "disks"));
 
-    controllers
+    let mut disks: Vec<Disk> = controllers
         .iter()
         .flat_map(|controller| {
-            let bus = text(controller, "_name");
+            let name = text(controller, "_name");
+            let is_nvme = name
+                .as_deref()
+                .is_some_and(|b| b.to_ascii_uppercase().contains("NVME"));
             controller
                 .get("_items")
                 .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .map(move |item| (bus.clone(), item))
+                .map(|items| (name, is_nvme, items))
         })
-        .map(|(controller_name, item)| {
-            let is_nvme = controller_name
-                .as_deref()
-                .is_some_and(|b| b.to_ascii_uppercase().contains("NVME"));
-            let medium = text(&item, "spnvme_medium_type")
-                .or_else(|| text(&item, "spsata_medium_type"));
+        .flat_map(|(name, is_nvme, items)| {
+            let bus = if is_nvme {
+                Some("NVMe".into())
+            } else {
+                name.map(|_| "SATA".into())
+            };
+            items
+                .iter()
+                .map(move |item| sp_drive(bus.clone(), is_nvme, item))
+        })
+        .collect();
 
-            Disk {
-                device: text(&item, "bsd_name")
-                    .map(|name| format!("/dev/{name}"))
-                    .or_else(|| text(&item, "_name"))
-                    .unwrap_or_else(|| "unknown".into()),
-                model: text(&item, "device_model").or_else(|| text(&item, "_name")),
-                vendor: text(&item, "device_manufacturer"),
-                kind: match medium.as_deref() {
-                    Some(m) if m.to_ascii_lowercase().contains("rotational") => DiskKind::Hdd,
-                    Some(_) => DiskKind::Ssd,
-                    // Nothing that speaks NVMe spins.
-                    None if is_nvme => DiskKind::Ssd,
-                    None => DiskKind::Unknown,
-                },
-                bus: if is_nvme {
-                    Some("NVMe".into())
+    // Virtualised Macs present their disks through neither NVMe nor SATA, and
+    // USB card readers never appear there either; the generic disc report is
+    // the catch-all both fall back to.
+    if disks.is_empty() {
+        disks = profiler(ctx, "SPDiscDataType", "disks")
+            .iter()
+            .filter_map(|controller| {
+                let name = text(controller, "_name")?;
+                let bus = if name.to_ascii_uppercase().contains("USB") {
+                    Some("USB".into())
                 } else {
-                    controller_name.map(|_| "SATA".into())
-                },
-                size_mb: text(&item, "size").as_deref().and_then(parse_size_mb),
-                firmware_revision: text(&item, "device_revision"),
-                is_removable: text(&item, "removable_media")
-                    .map(|v| v.eq_ignore_ascii_case("yes")),
-                partition_table: text(&item, "spnvme_partition_map_type")
-                    .or_else(|| text(&item, "spsata_partition_map_type")),
-                partition_count: item
-                    .get("volumes")
-                    .and_then(Value::as_array)
-                    .map(|v| v.len() as u32),
-                serial: text(&item, "device_serial"),
-            }
-        })
-        .collect()
+                    None
+                };
+                let items = controller.get("_items").and_then(Value::as_array)?;
+                Some(
+                    items
+                        .iter()
+                        .map(move |item| sp_drive(bus.clone(), false, item)),
+                )
+            })
+            .flatten()
+            .collect();
+    }
+
+    if disks.is_empty() {
+        ctx.warn("disks: no storage devices were reported");
+    }
+
+    disks
+}
+
+/// One drive out of a `system_profiler` `_items` array.
+///
+/// The NVMe, SATA and generic-disc reports share most key names; where they
+/// differ, the missing fields simply stay `null`.
+fn sp_drive(bus: Option<String>, is_nvme: bool, item: &Value) -> Disk {
+    let medium = text(item, "spnvme_medium_type").or_else(|| text(item, "spsata_medium_type"));
+
+    Disk {
+        device: text(item, "bsd_name")
+            .map(|name| format!("/dev/{name}"))
+            .or_else(|| text(item, "_name"))
+            .unwrap_or_else(|| "unknown".into()),
+        model: text(item, "device_model").or_else(|| text(item, "_name")),
+        vendor: text(item, "device_manufacturer"),
+        kind: match medium.as_deref() {
+            Some(m) if m.to_ascii_lowercase().contains("rotational") => DiskKind::Hdd,
+            Some(_) => DiskKind::Ssd,
+            // Nothing that speaks NVMe spins.
+            None if is_nvme => DiskKind::Ssd,
+            None => DiskKind::Unknown,
+        },
+        bus,
+        // The reports either spell a human-readable size ("500 GB") or raw
+        // bytes; builds have drifted between the two spellings.
+        size_mb: ["size", "capacity"]
+            .iter()
+            .find_map(|key| text(item, key))
+            .and_then(parse_size_mb)
+            .or_else(|| {
+                ["size_in_bytes", "capacity_in_bytes"]
+                    .iter()
+                    .find_map(|key| item.get(key).and_then(Value::as_u64))
+                    .map(to_mb)
+            }),
+        firmware_revision: text(item, "device_revision"),
+        is_removable: text(item, "removable_media").map(|v| v.eq_ignore_ascii_case("yes")),
+        partition_table: text(item, "spnvme_partition_map_type")
+            .or_else(|| text(item, "spsata_partition_map_type")),
+        partition_count: item
+            .get("volumes")
+            .and_then(Value::as_array)
+            .map(|v| v.len() as u32),
+        serial: text(item, "device_serial"),
+    }
 }
 
 // ---------------------------------------------------------------------------

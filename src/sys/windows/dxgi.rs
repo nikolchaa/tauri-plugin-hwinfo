@@ -17,12 +17,12 @@ use windows::Win32::Graphics::Dxgi::{
     DXGI_ERROR_NOT_FOUND,
 };
 
+use crate::models::DetailLevel;
+use crate::models::*;
 use crate::scan::gpu::blank_gpu;
 use crate::scan::{to_mb, Ctx};
-use crate::models::DetailLevel;
-use crate::sys::util::from_wide;
 use crate::sys::pci_vendor_name;
-use crate::models::*;
+use crate::sys::util::from_wide;
 
 pub fn adapters(ctx: &mut Ctx) -> Vec<Gpu> {
     let factory: IDXGIFactory1 = match unsafe { CreateDXGIFactory1() } {
@@ -56,8 +56,8 @@ pub fn adapters(ctx: &mut Ctx) -> Vec<Gpu> {
         };
 
         let model = from_wide(&desc.Description);
-        let is_software = desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0
-            || model.contains("Basic Render");
+        let is_software =
+            desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0 || model.contains("Basic Render");
 
         let mut gpu = blank_gpu(
             pci_vendor_name(desc.VendorId)
@@ -72,8 +72,12 @@ pub fn adapters(ctx: &mut Ctx) -> Vec<Gpu> {
         gpu.device_id_hex = Some(format!("0x{:04X}", desc.DeviceId));
         gpu.subsystem_id = Some(format!("0x{:08X}", desc.SubSysId));
         gpu.revision = Some(desc.Revision);
-        gpu.vram_mb = Some(to_mb(desc.DedicatedVideoMemory as u64));
-        gpu.shared_memory_mb = Some(to_mb(desc.SharedSystemMemory as u64));
+        // Software adapters (WARP) reserve no dedicated memory at all; the
+        // contract reports that absence as null rather than a meaningless 0.
+        gpu.vram_mb =
+            (desc.DedicatedVideoMemory > 0).then(|| to_mb(desc.DedicatedVideoMemory as u64));
+        gpu.shared_memory_mb =
+            (desc.SharedSystemMemory > 0).then(|| to_mb(desc.SharedSystemMemory as u64));
         // A first guess only; Vulkan overrides it with the driver's own answer
         // when a Vulkan device matches. Integrated GPUs either carve out no
         // dedicated memory at all or reserve a token amount - Intel's iGPUs

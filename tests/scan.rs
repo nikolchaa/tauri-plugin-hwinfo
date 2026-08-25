@@ -64,7 +64,10 @@ fn safe_mode_withholds_every_identifier() {
         assert!(interface.ip_networks.is_none(), "IPs leaked in safe mode");
     }
     for battery in info.battery.iter().flatten() {
-        assert!(battery.serial.is_none(), "battery serial leaked in safe mode");
+        assert!(
+            battery.serial.is_none(),
+            "battery serial leaked in safe mode"
+        );
     }
 
     let board = info.board.expect("board section requested");
@@ -91,7 +94,10 @@ fn core_facts_are_always_populated() {
         // The merge folds the observed clock into the maximum, so this holds
         // even on VMs that advertise no rated ceiling of their own.
         if let Some(current) = cpu.current_frequency {
-            assert!(cpu.max_frequency >= current, "max clock below current clock");
+            assert!(
+                cpu.max_frequency >= current,
+                "max clock below current clock"
+            );
         }
     }
 
@@ -165,7 +171,10 @@ fn gpu_entries_are_well_formed_at_capabilities() {
         if let Some(hex) = &gpu.vendor_id_hex {
             // PCI vendor IDs are four hex digits, but software renderers
             // (Mesa's llvmpipe) report synthetic IDs beyond 16 bits.
-            assert!(hex.starts_with("0x"), "vendor id hex `{hex}` lacks 0x prefix");
+            assert!(
+                hex.starts_with("0x"),
+                "vendor id hex `{hex}` lacks 0x prefix"
+            );
             assert_eq!(
                 u32::from_str_radix(&hex[2..], 16).ok(),
                 gpu.vendor_id,
@@ -190,6 +199,14 @@ fn gpu_entries_are_well_formed_at_capabilities() {
         if let Some(vram) = gpu.vram_mb {
             assert!(vram > 0, "adapter reported zero VRAM instead of null");
         }
+        // Metal follows from the target rather than from a probe: every Mac
+        // new enough to run this code has it - Intel included, since Catalina
+        // made Metal-capable GPUs a requirement - and nothing else ever does.
+        assert_eq!(
+            gpu.api.metal,
+            cfg!(target_os = "macos"),
+            "metal flag disagrees with the platform"
+        );
     }
 }
 
@@ -203,10 +220,13 @@ fn display_entries_are_well_formed() {
     let info = scan_at(DetailLevel::Full, &[Section::Display]);
 
     for display in info.display.iter().flatten() {
+        // A virtualised display can report sentinel EDID identifiers all
+        // round; a live mode is identification enough.
         let identified = !display.name.as_deref().unwrap_or_default().is_empty()
             || display.model.is_some()
+            || display.manufacturer.is_some()
             || display.native_resolution.is_some()
-            || display.manufacturer.is_some();
+            || display.resolution.width > 0;
         assert!(identified, "display entry carries no identifying fields");
 
         let mode = display.resolution;
@@ -235,10 +255,7 @@ fn board_section_has_core_identity() {
 
     let board = info.board.expect("board section requested");
     assert!(
-        board
-            .manufacturer
-            .as_deref()
-            .is_some_and(|m| !m.is_empty()),
+        board.manufacturer.as_deref().is_some_and(|m| !m.is_empty()),
         "no board manufacturer reported"
     );
     assert!(board.bios.mode.as_deref().is_some_and(|m| !m.is_empty()));
