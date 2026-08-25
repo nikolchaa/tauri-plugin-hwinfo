@@ -34,10 +34,20 @@ mod sysctl;
 /// One `system_profiler` data type, parsed. The payload is always
 /// `{"SPFooDataType": [ ... ]}`.
 fn profiler(ctx: &mut Ctx, data_type: &str, probe: &str) -> Vec<Value> {
+    profiler_at(ctx, data_type, probe, "mini")
+}
+
+/// Same, at an explicit detail level.
+///
+/// The itemised inventory runs at [`DetailLevel::Full`] anyway, and the
+/// `mini` level strips per-device fields from several reports — the NVMe and
+/// disc reports lose exactly the identifiers the drive parser matches on —
+/// so those callers ask for `full`.
+fn profiler_at(ctx: &mut Ctx, data_type: &str, probe: &str, level: &str) -> Vec<Value> {
     let output = ctx.cached(data_type, || {
         run(
             "system_profiler",
-            &["-json", "-detailLevel", "mini", data_type],
+            &["-json", "-detailLevel", level, data_type],
         )
     });
 
@@ -254,9 +264,11 @@ pub fn disks(ctx: &mut Ctx) -> Vec<Disk> {
         return Vec::new();
     }
 
-    // NVMe and SATA drives live under separate data types.
-    let nvme = profiler(ctx, "SPNVMeDataType", "disks");
-    let sata = profiler(ctx, "SPSerialATADataType", "disks");
+    // NVMe and SATA drives live under separate data types. The `full` detail
+    // level matters here: `mini` strips the device identifiers these reports
+    // exist to provide.
+    let nvme = profiler_at(ctx, "SPNVMeDataType", "disks", "full");
+    let sata = profiler_at(ctx, "SPSerialATADataType", "disks", "full");
 
     // The NVMe report lists drives flat at the top level; the SATA report
     // nests them beneath their controllers. Accepting both shapes everywhere
@@ -268,7 +280,7 @@ pub fn disks(ctx: &mut Ctx) -> Vec<Disk> {
     // USB card readers never appear there either; the generic disc report is
     // the catch-all both fall back to.
     if disks.is_empty() {
-        let disc = profiler(ctx, "SPDiscDataType", "disks");
+        let disc = profiler_at(ctx, "SPDiscDataType", "disks", "full");
         disks = sp_entries(&disc, None, false);
     }
 

@@ -155,7 +155,11 @@ fn full_restores_itemised_detail() {
     }
 
     let storage = info.storage.expect("storage requested");
-    assert!(!storage.disks.is_empty(), "no physical disks at full");
+    assert!(
+        !storage.disks.is_empty(),
+        "no physical disks at full; scan warnings were: {:#?}",
+        info.scan.warnings
+    );
 }
 
 /// Adapters may legitimately be absent — a headless Linux CI runner has no
