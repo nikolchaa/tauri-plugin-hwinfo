@@ -4,6 +4,12 @@
 # Pure Node job - no Rust toolchain needed, since the package ships only the
 # rollup'd contents of guest-js/. Pre-release versions (any `-` suffix) ride
 # under the `beta` dist-tag so plain installs never see them.
+#
+# Authenticates with npm trusted publishing (OIDC): no token is stored in the
+# repository. npmjs.com trusts exactly this file - nikolchaa/tauri-plugin-hwinfo,
+# workflow `publish-npm.yml` - so renaming it breaks publishing until the
+# trusted publisher on npmjs.com is updated to match. Provenance is attached
+# automatically because the repository is public.
 
 name: Publish (npm)
 
@@ -24,6 +30,8 @@ on:
 
 permissions:
   contents: read
+  # Lets the job request the OIDC token npm exchanges for a publish credential.
+  id-token: write
 
 concurrency:
   group: publish-npm-${{ inputs.branch || github.ref }}
@@ -31,7 +39,7 @@ concurrency:
 
 jobs:
   publish:
-    name: pnpm publish
+    name: npm publish
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -44,8 +52,16 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: "https://registry.npmjs.org/"
+
+      # Trusted publishing needs npm 11.5.1 or later.
+      - name: Ensure npm supports trusted publishing
+        run: |
+          if ! node -e 'const [a,b,c]=process.argv[1].split(".").map(Number);process.exit(a>11||(a==11&&(b>5||(b==5&&c>=1)))?0:1)' "$(npm --version)"; then
+            npm install -g npm@^11.5.1
+          fi
+          npm --version
 
       - name: Install pnpm
         run: npm install -g pnpm
@@ -70,7 +86,7 @@ jobs:
         run: |
           echo "tag=$(node -p 'require("./package.json").version.includes("-") ? "beta" : "latest"')" >> "$GITHUB_OUTPUT"
 
+      # pnpm still installs and builds (via prepublishOnly); the upload itself
+      # goes through the npm CLI, which is what implements the OIDC exchange.
       - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: pnpm publish --no-git-checks --tag ${{ steps.disttag.outputs.tag }}
+        run: npm publish --tag ${{ steps.disttag.outputs.tag }}

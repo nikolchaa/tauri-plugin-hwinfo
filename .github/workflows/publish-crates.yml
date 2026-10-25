@@ -5,6 +5,12 @@
 # to run if the checked-out sources disagree. crates.io versions are
 # immutable - if a publish fails after landing there, bump the version rather
 # than retrying it.
+#
+# Authenticates with crates.io trusted publishing (OIDC): the job trades a
+# GitHub-issued identity token for a crates.io token that lives only for this
+# run and is revoked when the job ends. crates.io trusts exactly this file -
+# nikolchaa/tauri-plugin-hwinfo, workflow `publish-crates.yml` - so renaming it
+# breaks publishing until the crate's trusted publisher is updated to match.
 
 name: Publish (crates.io)
 
@@ -25,6 +31,8 @@ on:
 
 permissions:
   contents: read
+  # Lets the job request the OIDC token crates.io exchanges for a publish token.
+  id-token: write
 
 concurrency:
   group: publish-crates-${{ inputs.branch || github.ref }}
@@ -68,7 +76,13 @@ jobs:
             exit 1
           fi
 
+      # Last step before publishing, so the short-lived token exists for as
+      # little time as possible.
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
       - name: Publish to crates.io
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-        run: cargo publish --token "$CARGO_REGISTRY_TOKEN"
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish
