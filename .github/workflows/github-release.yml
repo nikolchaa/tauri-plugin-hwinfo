@@ -1,4 +1,7 @@
-# Create the GitHub Release for a version tag.
+# Create the GitHub Release page for a version tag.
+#
+# Publishes nothing: crates.io and npm are handled only by publish-crates.yml
+# and publish-npm.yml, the two files the registries trust.
 #
 # Runs beside publish-crates.yml and publish-npm.yml, which fire on the same
 # tag. The notes are the matching `## [x.y.z]` section of CHANGELOG.md, so the
@@ -8,7 +11,7 @@
 # A release that already exists for the tag (e.g. one drafted in the GitHub UI,
 # which is what pushed the tag in the first place) is left untouched.
 
-name: Release
+name: GitHub Release
 
 on:
   push:

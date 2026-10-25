@@ -43,7 +43,7 @@ token-free publishing.
 - Both registries are published through trusted publishing (OIDC): no
   long-lived registry tokens are stored in the repository, and npm releases
   carry provenance linking each version to the workflow run that built it.
-- A `Release` workflow creates the GitHub Release for a tag from its
+- A `GitHub Release` workflow creates the GitHub Release page for a tag from its
   CHANGELOG section, marked as a pre-release for `-` versions.
 
 ### Known limitations
