@@ -334,8 +334,13 @@ cargo run --example dump -- full unsafe
   GPU, so those fields are `null` because the hardware has no such thing.
 - **Mobile** - Android and iOS get the portable subset (CPU, memory, storage,
   network, OS) with a warning naming what is missing, instead of the placeholder
-  values v1 returned. Shipping to the iOS App Store additionally needs
-  `sysinfo`'s `apple-app-store` feature, which is not wired up here yet.
+  values v1 returned. The display section reports the device screen as the
+  Tauri runtime sees it - resolution, position and scale factor. On Android,
+  the GPU shows up at `capabilities` through Vulkan (Adreno, Mali, ...), and CPU
+  load is `null` with a warning because Android keeps `/proc/stat` from apps.
+  `sysinfo` already confines itself to App Store-safe APIs on iOS; the iOS
+  battery reading goes through IOKit, which is not public API there, so expect
+  it to come back empty.
 
 `maxFrequency` deserves a note: no OS reliably publishes a turbo ceiling -
 Windows and CPUID both hand back the base clock - so it reports the highest

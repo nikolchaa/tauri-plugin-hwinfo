@@ -276,5 +276,19 @@ Empty on a desktop. Requires the `battery` cargo feature.
 Android and iOS fall back to the portable collectors: `cpu` (without CPUID
 extras on Arm), `memory` totals, `storage.volumes`, `network`, `os`, and
 `battery` on iOS. Everything platform-native is `null`, with a warning naming
-what is missing. Shipping to the iOS App Store additionally needs `sysinfo`'s
-`apple-app-store` feature, which is **not** wired up here yet.
+what is missing. On top of that:
+
+- `display` lists the device screen as the Tauri runtime reports it:
+  resolution, position, `scaleFactor` and `isPrimary`. EDID identity, refresh
+  rate and physical size stay `null`.
+- `gpu` is populated on Android at `capabilities` and above, from Vulkan
+  (`libvulkan.so` ships with every Android 7+ device). iOS has no Vulkan
+  loader, so it stays empty there.
+- `cpu.usagePercent` and per-core `usagePercent` are `null` on Android, with
+  a warning: apps cannot read `/proc/stat` since Android 8.
+- `os.name` is `"Android"` / `"iOS"` and `os.family` is `"android"` / `"ios"`.
+- `battery` on iOS goes through IOKit, which is not public API on iOS; expect
+  an empty list. Android has no battery backend.
+
+`sysinfo` already restricts itself to App Store-safe APIs when built for iOS.
+Its `apple-app-store` feature only matters for sandboxed Mac App Store builds.

@@ -156,38 +156,33 @@ impl<R: Runtime> Hwinfo<R> {
     }
 
     /// Ask the runtime for the monitor list, which only it can answer.
+    ///
+    /// Not desktop-only: on Android and iOS the runtime reports the device
+    /// screen, and it is the only source of display data there.
     fn monitors(&self, sections: &[Section]) -> Vec<MonitorHint> {
         if !sections.contains(&Section::Display) {
             return Vec::new();
         }
 
-        #[cfg(desktop)]
-        {
-            let primary = self.app.primary_monitor().ok().flatten();
-            self.app
-                .available_monitors()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|m| {
-                    let is_primary = primary
-                        .as_ref()
-                        .is_some_and(|p| p.name() == m.name() && p.position() == m.position());
-                    MonitorHint {
-                        name: m.name().cloned(),
-                        width: m.size().width,
-                        height: m.size().height,
-                        position_x: m.position().x,
-                        position_y: m.position().y,
-                        scale_factor: m.scale_factor(),
-                        is_primary,
-                    }
-                })
-                .collect()
-        }
-
-        #[cfg(not(desktop))]
-        {
-            Vec::new()
-        }
+        let primary = self.app.primary_monitor().ok().flatten();
+        self.app
+            .available_monitors()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|m| {
+                let is_primary = primary
+                    .as_ref()
+                    .is_some_and(|p| p.name() == m.name() && p.position() == m.position());
+                MonitorHint {
+                    name: m.name().cloned(),
+                    width: m.size().width,
+                    height: m.size().height,
+                    position_x: m.position().x,
+                    position_y: m.position().y,
+                    scale_factor: m.scale_factor(),
+                    is_primary,
+                }
+            })
+            .collect()
     }
 }

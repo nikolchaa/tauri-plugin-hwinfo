@@ -24,10 +24,17 @@ pub fn collect(ctx: &mut Ctx) -> Os {
         .or_else(|| clean_opt(System::os_version()))
         .unwrap_or_else(|| "Unknown".into());
 
+    // On mobile `sysinfo` answers with the wrong thing entirely: the handset
+    // model (`ro.product.model`) on Android and the kernel type ("Darwin") on
+    // iOS. `os_info` names the OS itself there.
+    let name = if cfg!(any(target_os = "android", target_os = "ios")) {
+        clean(info.os_type().to_string())
+    } else {
+        clean_opt(System::name()).or_else(|| clean(info.os_type().to_string()))
+    };
+
     Os {
-        name: clean_opt(System::name())
-            .or_else(|| clean(info.os_type().to_string()))
-            .unwrap_or_else(|| family.to_string()),
+        name: name.unwrap_or_else(|| family.to_string()),
         family: family.to_string(),
         version,
         long_version: clean_opt(System::long_os_version()),

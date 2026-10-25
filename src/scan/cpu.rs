@@ -18,7 +18,7 @@ pub fn collect(ctx: &mut Ctx) -> Vec<Cpu> {
     // Load is a delta between two samples, so measuring it costs a sampling
     // interval - the single largest fixed cost in this section. Below the full
     // tier the frequency alone is read, which is instantaneous.
-    let with_load = ctx.wants(DetailLevel::Full);
+    let with_load = ctx.wants(DetailLevel::Full) && load_readable(ctx);
     let refresh = if with_load {
         CpuRefreshKind::everything()
     } else {
@@ -180,6 +180,18 @@ fn build(
         cores,
         serial: ctx.redact(native.serial),
     }
+}
+
+/// Whether the OS will let this process measure CPU load at all.
+///
+/// Android has kept `/proc/stat` from apps since 8.0. `sysinfo` swallows the
+/// failure and reports every core idle, which is worse than no answer.
+fn load_readable(ctx: &mut Ctx) -> bool {
+    if cfg!(target_os = "android") && std::fs::File::open("/proc/stat").is_err() {
+        ctx.warn("cpu: /proc/stat is not readable by apps on Android; load is unavailable");
+        return false;
+    }
+    true
 }
 
 /// What `sysinfo` reports, independent of platform.

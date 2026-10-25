@@ -28,6 +28,7 @@ pub enum Error {
     #[error(transparent)]
     Tauri(#[from] tauri::Error),
 
+    /// A call into the plugin's native Android or iOS layer failed.
     #[cfg(mobile)]
     #[error(transparent)]
     PluginInvoke(#[from] tauri::plugin::mobile::PluginInvokeError),
