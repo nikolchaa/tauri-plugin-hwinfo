@@ -5,6 +5,49 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-alpha.2]
+
+Mobile reporting, and CI that checks every platform the plugin targets.
+
+### Fixed
+
+- `display` was always empty on Android and iOS: monitor enumeration was
+  restricted to desktop builds, though the Tauri runtime answers it on mobile
+  too. The device screen is now reported with its resolution and scale factor.
+- `os.name` reported the handset model on Android (`"Pixel 9 Pro"`) and the
+  kernel type on iOS (`"Darwin"`). It is now `"Android"` / `"iOS"`.
+- CPU load on Android read as 0% on every core at `full`: apps cannot read
+  `/proc/stat` since Android 8, and the failure was swallowed. Load is now
+  `null` there with a warning, and the sampling delay is skipped.
+- Mobile builds produced two compiler warnings (an unused field and an
+  undocumented error variant).
+
+### Documentation
+
+- The mobile notes in the README and [`docs/CONTRACT.md`](docs/CONTRACT.md)
+  now describe what Android and iOS actually return, including Vulkan GPU
+  enumeration on Android. The `apple-app-store` note is corrected: `sysinfo`
+  already avoids sandbox-restricted APIs on iOS, and the feature only matters
+  for Mac App Store builds.
+
+### CI
+
+- New `CI` workflow on every push and pull request (Linux runners only):
+  `rustfmt`, `clippy -D warnings`, tests, a `cargo publish` dry run, an Android
+  type-check, and a build of the TypeScript bindings.
+- The manual `Tests` workflow also type-checks Android and iOS.
+- Publishing is split into independent crates.io and npm workflows, so one
+  registry failing no longer blocks the other. Both still fire on a `v*.*.*`
+  tag and can be re-run by hand for a stated version.
+- A `Release` workflow creates the GitHub Release for a tag from its
+  CHANGELOG section, marked as a pre-release for `-` versions.
+
+### Known limitations
+
+- The Linux and macOS backends have now passed the `Tests` workflow on real
+  runners (Ubuntu, Apple silicon and Intel macOS). Android and iOS are
+  type-checked in CI but have not been run on a device.
+
 ## [1.0.0-alpha.1]
 
 A complete rewrite. The data contract is different in every section; see
