@@ -51,7 +51,16 @@ jobs:
             exit 1
           fi
 
+          # Title the release after the annotated tag's message
+          # ("Release vX.Y.Z ✨: ..."); a lightweight tag falls back to its name.
+          git fetch --force --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
+          title="$TAG"
+          if [ "$(git cat-file -t "refs/tags/$TAG")" = "tag" ]; then
+            subject="$(git for-each-ref --format='%(contents:subject)' "refs/tags/$TAG")"
+            [ -n "$subject" ] && title="$subject"
+          fi
+
           flags=()
           case "$version" in *-*) flags+=(--prerelease) ;; esac
 
-          gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag "${flags[@]}"
+          gh release create "$TAG" --title "$title" --notes-file notes.md --verify-tag "${flags[@]}"

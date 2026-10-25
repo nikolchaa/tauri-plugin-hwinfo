@@ -7,7 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-alpha.2]
 
-Mobile reporting, and CI that checks every platform the plugin targets.
+Mobile reporting, CI that checks every platform the plugin targets, and
+token-free publishing.
 
 ### Fixed
 
@@ -39,6 +40,9 @@ Mobile reporting, and CI that checks every platform the plugin targets.
 - Publishing is split into independent crates.io and npm workflows, so one
   registry failing no longer blocks the other. Both still fire on a `v*.*.*`
   tag and can be re-run by hand for a stated version.
+- Both registries are published through trusted publishing (OIDC): no
+  long-lived registry tokens are stored in the repository, and npm releases
+  carry provenance linking each version to the workflow run that built it.
 - A `Release` workflow creates the GitHub Release for a tag from its
   CHANGELOG section, marked as a pre-release for `-` versions.
 
