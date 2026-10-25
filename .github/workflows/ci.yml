@@ -1,0 +1,122 @@
+# Fast gate on every push and pull request.
+#
+# Linux runners only, so it costs nothing on a public repository and finishes
+# in a few minutes. The real cross-platform hardware runs (macOS, Windows, iOS)
+# stay in tests.yml, which is manual.
+#
+# What this catches before a tag ever reaches the publish workflows:
+#   - formatting and lint drift
+#   - a broken Linux build or a failing test
+#   - Android no longer compiling (no runner needed - `cargo check` only)
+#   - the TypeScript bindings no longer building
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Linux - fmt, clippy, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libglib2.0-dev \
+            libgdk-pixbuf-2.0-dev \
+            libwebkit2gtk-4.1-dev \
+            libdbus-1-dev \
+            pkg-config
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      # Gating here, unlike the advisory clippy in tests.yml: one platform's
+      # lints are stable enough to hold the line on.
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Clippy (no default features)
+        run: cargo clippy --lib --no-default-features -- -D warnings
+
+      - name: Tests
+        run: cargo test --all-features
+
+      # Proves the crate packages and builds from the tarball crates.io would
+      # receive, without publishing anything.
+      - name: Package dry run
+        run: cargo publish --dry-run --allow-dirty
+
+  android:
+    name: Android - cargo check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-linux-android
+          components: clippy
+
+      # Type-checking needs no NDK: nothing is linked.
+      - name: Clippy (aarch64-linux-android)
+        run: cargo clippy --lib --all-features --target aarch64-linux-android -- -D warnings
+
+  js:
+    name: TypeScript bindings
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # Lists the files a publish would ship, driven by package.json `files`.
+      - name: Pack dry run
+        run: npm pack --dry-run

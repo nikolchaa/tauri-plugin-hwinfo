@@ -10,6 +10,9 @@
 #   macos-latest    Apple Silicon  - macOS 26 since June 2026
 #   macos-15-intel  x86_64 macOS   - last Intel image; supported until Aug 2027
 #   windows-latest  x86_64 Windows
+#
+# Plus a type-check of the mobile targets (Android on Linux, iOS on macOS).
+# The cheap per-push gate lives in ci.yml.
 
 name: Tests
 
@@ -102,3 +105,35 @@ jobs:
       - name: Clippy (advisory)
         run: cargo clippy --all-targets --all-features
         continue-on-error: true
+
+  # Mobile targets are type-checked only: there is no device to run a scan on,
+  # and linking would need the NDK / an Xcode project for no extra signal.
+  # iOS needs the Apple SDK, so it has to run on a macOS runner.
+  mobile:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: aarch64-linux-android
+          - os: macos-latest
+            target: aarch64-apple-ios
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref }}
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          components: clippy
+
+      - name: Clippy (${{ matrix.target }})
+        run: cargo clippy --lib --all-features --target ${{ matrix.target }} -- -D warnings

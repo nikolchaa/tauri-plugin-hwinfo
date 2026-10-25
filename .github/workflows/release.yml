@@ -1,0 +1,57 @@
+# Create the GitHub Release for a version tag.
+#
+# Runs beside publish-crates.yml and publish-npm.yml, which fire on the same
+# tag. The notes are the matching `## [x.y.z]` section of CHANGELOG.md, so the
+# changelog stays the single place release notes are written. Versions with a
+# `-` suffix are marked as pre-releases.
+#
+# A release that already exists for the tag (e.g. one drafted in the GitHub UI,
+# which is what pushed the tag in the first place) is left untouched.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create release from CHANGELOG
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; leaving it as is."
+            exit 0
+          fi
+
+          version="${TAG#v}"
+          # Everything under `## [version]` up to the next `## [` heading.
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md has no section for [$version]"
+            exit 1
+          fi
+
+          flags=()
+          case "$version" in *-*) flags+=(--prerelease) ;; esac
+
+          gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag "${flags[@]}"
