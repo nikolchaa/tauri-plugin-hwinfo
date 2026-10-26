@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `rust-version` claimed 1.82, but `sysinfo` 0.39 requires Rust 1.95, so older
   toolchains failed inside the dependency instead of with a clear MSRV error.
   The declared minimum is now 1.95.
+- The npm package accepted any `@tauri-apps/api` from `2.0.0-beta.6` upwards,
+  including a future 3.x it was never built against. It now requires `^2.0.0`.
 
 ### CI
 

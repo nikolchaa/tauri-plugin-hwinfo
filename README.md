@@ -129,6 +129,8 @@ downgrading, so you always know which you got.
 
 ## 📦 Installation
 
+Requires Rust 1.95 or newer (`sysinfo` 0.39 sets that floor) and Tauri 2.
+
 ```sh
 cargo add tauri-plugin-hwinfo
 npm i tauri-plugin-hwinfo

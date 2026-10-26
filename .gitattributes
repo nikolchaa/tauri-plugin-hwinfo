@@ -1,0 +1,4 @@
+# build.rs regenerates these on every build and always writes LF. Pinning LF
+# here keeps Windows checkouts (core.autocrlf=true) from reporting them as
+# modified after each build.
+/permissions/** text eol=lf
