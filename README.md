@@ -344,6 +344,16 @@ cargo run --example dump -- full unsafe
   battery reading goes through IOKit, which is not public API there, so expect
   it to come back empty.
 
+  > **iOS builds currently need an older `libc`.** `libc` 0.2.190 removed iOS
+  > constants that `sysinfo` 0.39 still uses
+  > ([rust-lang/libc#5650](https://github.com/rust-lang/libc/issues/5650)), so
+  > an iOS build fails inside `sysinfo`. Until `sysinfo` 0.40 ships, pin it in
+  > your app's lockfile:
+  >
+  > ```sh
+  > cargo update -p libc --precise 0.2.189
+  > ```
+
 `maxFrequency` deserves a note: no OS reliably publishes a turbo ceiling -
 Windows and CPUID both hand back the base clock - so it reports the highest
 figure either advertised or actually observed during the scan.

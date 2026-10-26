@@ -1,9 +1,10 @@
 # Manual, on-demand cross-platform test runs.
 #
 # Deliberately NOT wired to push/pull_request: this suite runs real hardware
-# scans and costs minutes of paid macOS/Windows runner time, so it only fires
-# when someone asks for it from the Actions tab (or via `gh workflow run`),
-# against any branch they name.
+# scans on six runners and takes far longer than the per-push gate, so it only
+# fires when someone asks for it from the Actions tab (or via `gh workflow
+# run`), against any branch they name. Standard runners cost nothing on a
+# public repository, macOS and Windows included.
 #
 # Runners:
 #   ubuntu-latest   x86_64 Linux   - needs GTK/WebKit/dbus dev packages for Tauri;
@@ -97,7 +98,7 @@ jobs:
       - name: Dump system_profiler reports (macOS diagnostics)
         if: runner.os == 'macOS' && inputs.profiler-dump
         run: |
-          for dt in SPNVMeDataType SPSerialATADataType SPDiscDataType SPStorageDataType SPMemoryDataType; do
+          for dt in SPDisplaysDataType SPNVMeDataType SPSerialATADataType SPDiscDataType SPStorageDataType SPMemoryDataType; do
             echo "=== $dt ==="
             system_profiler -json -detailLevel full "$dt" 2>/dev/null | head -c 4000 || true
             echo
@@ -113,9 +114,10 @@ jobs:
 
       # Safe mode keeps hardware identifiers out of the public CI log and the
       # artifact; this step proves the whole pipeline produces parseable JSON
-      # without crashing.
+      # without crashing. It runs after failed tests too: that is exactly when
+      # the scan is needed to see what the runner actually reported.
       - name: Smoke test - dump example as JSON
-        if: inputs.run-example
+        if: inputs.run-example && !cancelled()
         shell: bash
         run: |
           mkdir -p target/scans
@@ -167,6 +169,15 @@ jobs:
           toolchain: stable
           target: ${{ matrix.target }}
           components: clippy
+
+      # libc 0.2.190 dropped iOS constants that sysinfo 0.39 imports
+      # (rust-lang/libc#5650), and sysinfo will only fix it in 0.40. Pinning
+      # keeps this job checking our code meanwhile. Remove with sysinfo 0.40.
+      - name: Pin libc for iOS
+        if: matrix.target == 'aarch64-apple-ios'
+        run: |
+          cargo generate-lockfile
+          cargo update -p libc --precise 0.2.189
 
       - name: Clippy (${{ matrix.target }})
         run: cargo clippy --lib --all-features --target ${{ matrix.target }} -- -D warnings

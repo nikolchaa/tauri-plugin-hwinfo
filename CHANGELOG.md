@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The npm package accepted any `@tauri-apps/api` from `2.0.0-beta.6` upwards,
   including a future 3.x it was never built against. It now requires `^2.0.0`.
 
+### Documentation
+
+- iOS builds fail inside `sysinfo` with `libc` 0.2.190 or later, which removed
+  iOS constants `sysinfo` 0.39 imports
+  ([rust-lang/libc#5650](https://github.com/rust-lang/libc/issues/5650)). The
+  README gives the lockfile pin that works around it until `sysinfo` 0.40.
+
 ### CI
 
 - The TypeScript types in `guest-js/index.ts` are now checked against the serde
