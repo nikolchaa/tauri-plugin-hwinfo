@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Rust types and type-check against the TypeScript ones, along with a real
   `unsafe` / `full` scan from the Linux runner. A missing, extra or misspelt
   field, a wrong type, or a union member one side lacks fails the `CI` workflow.
+- `apt-get` steps time out after 10 minutes and retry stalled downloads, after
+  a hung Ubuntu mirror ran a job into its 30-minute limit. `actions/checkout`
+  and `actions/setup-node` move to v7, off the deprecated Node 20 runtime.
 
 ## [1.0.0-alpha.2]
 
