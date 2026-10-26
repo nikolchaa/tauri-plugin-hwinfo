@@ -80,6 +80,19 @@ fn safe_mode_withholds_every_identifier() {
     assert!(os.hostname.is_none());
     assert!(os.machine_id.is_none());
     assert!(os.user.is_none());
+
+    // OS errors quoted in warnings can carry paths under the home directory.
+    let home = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" });
+    if let Ok(home) = home.map(|h| h.trim_end_matches(['/', '\\']).to_string()) {
+        if home.len() > 1 {
+            for warning in &info.scan.warnings {
+                assert!(
+                    !warning.contains(&home) && !warning.contains(&home.replace('\\', "/")),
+                    "home directory leaked in a safe-mode warning: {warning}"
+                );
+            }
+        }
+    }
 }
 
 #[test]

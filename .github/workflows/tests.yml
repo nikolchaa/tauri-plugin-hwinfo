@@ -57,8 +57,10 @@ jobs:
         include:
           - os: ubuntu-latest
             gpu-apis: vulkan,opencl
+          # An Apple-silicon VM without GPU passthrough: system_profiler lists
+          # no graphics processor at all, so there is nothing to expect.
           - os: macos-latest
-            gpu-apis: metal
+            gpu-apis: ""
           - os: macos-15-intel
             gpu-apis: metal
           - os: windows-latest

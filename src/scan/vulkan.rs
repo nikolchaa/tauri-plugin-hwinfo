@@ -52,7 +52,16 @@ pub fn probe(ctx: &mut Ctx) -> Vec<VulkanDevice> {
 }
 
 unsafe fn enumerate() -> Result<Vec<VulkanDevice>, String> {
-    let entry = ash::Entry::load().map_err(|e| format!("loader unavailable: {e}"))?;
+    // Fixed messages rather than the loader's own: on macOS a failed dlopen
+    // lists every path dyld searched, home directory and username included.
+    let entry = ash::Entry::load().map_err(|e| match e {
+        ash::LoadingError::LibraryLoadFailure(_) => {
+            "no loader found (no Vulkan runtime is installed)".to_string()
+        }
+        ash::LoadingError::MissingEntryPoint(_) => {
+            "loader is missing vkGetInstanceProcAddr".to_string()
+        }
+    })?;
 
     // Ask for the highest version the loader admits to, capped at 1.3 - asking
     // for more than the loader supports fails instance creation outright.

@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   The declared minimum is now 1.95.
 - The npm package accepted any `@tauri-apps/api` from `2.0.0-beta.6` upwards,
   including a future 3.x it was never built against. It now requires `^2.0.0`.
+- Safe mode could leak the username through `scan.warnings`. On a Mac without
+  Vulkan, the loader warning quoted every path dyld searched, including ones
+  under `/Users/<name>/`. The Vulkan loader warning is now a fixed message,
+  and in safe mode every warning has the home directory shortened to `~`.
 
 ### Documentation
 
@@ -40,7 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - GPU API detection is now proven on every runner instead of only checked for
   shape, which passed on machines with no adapters at all. Linux runners get
   real Vulkan and OpenCL devices (lavapipe, PoCL) and must report both;
-  Windows must report a Direct3D feature level and macOS must report Metal.
+  Windows must report a Direct3D feature level and the Intel macOS runner must
+  report Metal. The Apple-silicon runner is a VM without GPU passthrough, where
+  `system_profiler` lists no graphics processor, so nothing is expected there.
   The `Tests` workflow also uploads each runner's `safe` / `full` scan.
 
 ## [1.0.0-alpha.2]

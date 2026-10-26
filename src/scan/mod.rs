@@ -86,8 +86,15 @@ impl Ctx {
     }
 
     /// Record a non-fatal problem. Duplicates are collapsed.
+    ///
+    /// Warnings often carry an OS error verbatim, and those can quote a path
+    /// under the user's home directory - which names the user. Safe mode
+    /// shortens it to `~` so a warning never leaks what `os.user` withholds.
     pub fn warn(&mut self, msg: impl Into<String>) {
-        let msg = msg.into();
+        let mut msg = msg.into();
+        if !self.mode.is_unsafe() {
+            msg = without_home(&msg, home_dir().as_deref());
+        }
         if !self.warnings.contains(&msg) {
             self.warnings.push(msg);
         }
@@ -218,6 +225,24 @@ pub(crate) fn clean(value: impl AsRef<str>) -> Option<String> {
     Some(v.to_string())
 }
 
+fn home_dir() -> Option<String> {
+    let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var(var).ok()
+}
+
+/// `msg` with every mention of `home` replaced by `~`, in either slash style.
+fn without_home(msg: &str, home: Option<&str>) -> String {
+    let Some(home) = home.map(|h| h.trim_end_matches(['/', '\\'])) else {
+        return msg.to_string();
+    };
+    // A home of `/` (some service accounts) would turn every path into `~`.
+    if home.len() < 2 {
+        return msg.to_string();
+    }
+    let forward = home.replace('\\', "/");
+    msg.replace(home, "~").replace(&forward, "~")
+}
+
 /// `clean`, applied to an optional value.
 pub(crate) fn clean_opt(value: Option<impl AsRef<str>>) -> Option<String> {
     value.and_then(clean)
@@ -257,5 +282,24 @@ mod tests {
     fn safe_mode_redacts_identifiers() {
         assert_eq!(ScanMode::Safe.redact(Some("serial")), None);
         assert_eq!(ScanMode::Unsafe.redact(Some("serial")), Some("serial"));
+    }
+
+    #[test]
+    fn home_directory_is_shortened_in_warnings() {
+        // The dyld error that prompted this, abridged.
+        let dyld = "tried: '/Users/runner/lib/libvulkan.dylib' (no such file)";
+        assert_eq!(
+            without_home(dyld, Some("/Users/runner/")),
+            "tried: '~/lib/libvulkan.dylib' (no such file)"
+        );
+        assert_eq!(
+            without_home(
+                r"C:\Users\nico\.cargo and C:/Users/nico/bin",
+                Some(r"C:\Users\nico")
+            ),
+            r"~\.cargo and ~/bin"
+        );
+        assert_eq!(without_home("/srv/data", Some("/")), "/srv/data");
+        assert_eq!(without_home("/srv/data", None), "/srv/data");
     }
 }
