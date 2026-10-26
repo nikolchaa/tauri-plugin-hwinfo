@@ -6,7 +6,8 @@
 # against any branch they name.
 #
 # Runners:
-#   ubuntu-latest   x86_64 Linux   - needs GTK/WebKit/dbus dev packages for Tauri
+#   ubuntu-latest   x86_64 Linux   - needs GTK/WebKit/dbus dev packages for Tauri;
+#                                    lavapipe + PoCL give it a Vulkan and an OpenCL device
 #   macos-latest    Apple Silicon  - macOS 26 since June 2026
 #   macos-15-intel  x86_64 macOS   - last Intel image; supported until Aug 2027
 #   windows-latest  x86_64 Windows
@@ -49,8 +50,18 @@ jobs:
     strategy:
       # Report every platform's result rather than stopping at the first red.
       fail-fast: false
+      # `gpu-apis` is what each runner's stack is known to expose; see
+      # `expected_gpu_apis_are_detected` in tests/scan.rs.
       matrix:
-        os: [ubuntu-latest, macos-latest, macos-15-intel, windows-latest]
+        include:
+          - os: ubuntu-latest
+            gpu-apis: vulkan,opencl
+          - os: macos-latest
+            gpu-apis: metal
+          - os: macos-15-intel
+            gpu-apis: metal
+          - os: windows-latest
+            gpu-apis: directx
 
     steps:
       - name: Checkout
@@ -77,7 +88,11 @@ jobs:
             libgdk-pixbuf-2.0-dev \
             libwebkit2gtk-4.1-dev \
             libdbus-1-dev \
-            pkg-config
+            pkg-config \
+            libvulkan1 \
+            mesa-vulkan-drivers \
+            ocl-icd-libopencl1 \
+            pocl-opencl-icd
 
       # Ground truth for report-shape questions. The parsers in
       # src/sys/macos/mod.rs are written against these documents; when Apple
@@ -95,13 +110,30 @@ jobs:
         run: cargo build --all-targets --all-features
 
       - name: Unit and integration tests
+        env:
+          HWINFO_EXPECT_GPU_APIS: ${{ matrix.gpu-apis }}
         run: cargo test --all-features -- --nocapture
 
-      # Safe mode keeps hardware identifiers out of the public CI log; this
-      # step proves the whole pipeline produces parseable JSON without crashing.
+      # Safe mode keeps hardware identifiers out of the public CI log and the
+      # artifact; this step proves the whole pipeline produces parseable JSON
+      # without crashing.
       - name: Smoke test - dump example as JSON
         if: inputs.run-example
-        run: cargo run --example dump -- safe capabilities
+        shell: bash
+        run: |
+          mkdir -p target/scans
+          cargo run --example dump -- safe full > "target/scans/${{ matrix.os }}.json"
+          cat "target/scans/${{ matrix.os }}.json"
+
+      # The scan each runner actually produced, for reading values rather than
+      # just shapes: what a GPU, disk or display looks like on that platform.
+      - name: Upload scan
+        if: inputs.run-example && always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.os }}
+          path: target/scans/${{ matrix.os }}.json
+          if-no-files-found: warn
 
       # Advisory: lint findings are visible in the log but do not fail the run.
       # Platform-specific lints are expected to drift; the build/test gates above

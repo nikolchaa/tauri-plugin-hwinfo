@@ -214,6 +214,47 @@ fn gpu_entries_are_well_formed_at_capabilities() {
     }
 }
 
+/// The well-formedness check above passes on a machine with no adapters at
+/// all, so on its own it never proves a probe works. CI gives each runner a
+/// known stack - lavapipe and PoCL on Linux, WARP on Windows, the
+/// paravirtual Apple GPU on macOS - and names in `HWINFO_EXPECT_GPU_APIS`
+/// the APIs that stack must surface. Unset, as on a developer machine whose
+/// hardware nobody wrote down, the test checks nothing.
+///
+/// Runs at `full`: the Direct3D feature level and the macOS adapter list are
+/// only collected there.
+#[test]
+fn expected_gpu_apis_are_detected() {
+    let Ok(expected) = std::env::var("HWINFO_EXPECT_GPU_APIS") else {
+        return;
+    };
+    let info = scan_at(DetailLevel::Full, &[Section::Gpu]);
+    let gpus = info.gpu.unwrap_or_default();
+    let found = gpus
+        .iter()
+        .map(|g| format!("{} ({:?}): {:?}", g.model, g.kind, g.api))
+        .collect::<Vec<_>>()
+        .join("\n  ");
+
+    for api in expected.split(',').map(str::trim).filter(|a| !a.is_empty()) {
+        let detected = gpus.iter().any(|g| match api {
+            "vulkan" => g.api.vulkan && g.api.vulkan_version.is_some(),
+            "opencl" => g.api.opencl && g.api.opencl_version.is_some(),
+            "directx" => g.api.directx_feature_level.is_some(),
+            "metal" => g.api.metal,
+            "cuda" => g.api.cuda,
+            "hip" => g.api.hip,
+            other => panic!("HWINFO_EXPECT_GPU_APIS names unknown API `{other}`"),
+        });
+        assert!(
+            detected,
+            "expected {api} on this runner, but no adapter reports it.\n\
+             adapters:\n  {found}\nwarnings: {:?}",
+            info.scan.warnings
+        );
+    }
+}
+
 /// Displays are absent on headless runners; present ones must be coherent.
 ///
 /// Outside a Tauri runtime there are no monitor hints, so a platform that

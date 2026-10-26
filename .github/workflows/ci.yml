@@ -61,7 +61,11 @@ jobs:
             libgdk-pixbuf-2.0-dev \
             libwebkit2gtk-4.1-dev \
             libdbus-1-dev \
-            pkg-config
+            pkg-config \
+            libvulkan1 \
+            mesa-vulkan-drivers \
+            ocl-icd-libopencl1 \
+            pocl-opencl-icd
 
       - name: Formatting
         run: cargo fmt --all --check
@@ -75,8 +79,11 @@ jobs:
         run: cargo clippy --lib --no-default-features -- -D warnings
 
       # Includes tests/contract.rs, which pins the fully populated fixtures in
-      # tests/contract/ to src/models.rs.
+      # tests/contract/ to src/models.rs. lavapipe and PoCL, installed above,
+      # give the runner real Vulkan and OpenCL devices to detect.
       - name: Tests
+        env:
+          HWINFO_EXPECT_GPU_APIS: vulkan,opencl
         run: cargo test --all-features
 
       # The real scan proves the TypeScript types against actual output; the

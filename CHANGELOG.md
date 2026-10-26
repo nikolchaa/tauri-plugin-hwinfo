@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `apt-get` steps time out after 10 minutes and retry stalled downloads, after
   a hung Ubuntu mirror ran a job into its 30-minute limit. `actions/checkout`
   and `actions/setup-node` move to v7, off the deprecated Node 20 runtime.
+- GPU API detection is now proven on every runner instead of only checked for
+  shape, which passed on machines with no adapters at all. Linux runners get
+  real Vulkan and OpenCL devices (lavapipe, PoCL) and must report both;
+  Windows must report a Direct3D feature level and macOS must report Metal.
+  The `Tests` workflow also uploads each runner's `safe` / `full` scan.
 
 ## [1.0.0-alpha.2]
 
