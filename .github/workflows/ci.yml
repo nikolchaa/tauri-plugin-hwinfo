@@ -46,12 +46,27 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
 
+      # The image identifies the Ubuntu release, so a migration to a new one
+      # starts a fresh package cache instead of restoring the old release's.
+      - name: Identify runner image
+        id: image
+        run: echo "id=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
+
+      # ~90 MB of GTK/WebKit packages, downloaded once and reused: the Azure
+      # mirror has crawled at ~40 KB/s, and a cache hit skips it entirely.
+      - name: Cache apt packages
+        uses: actions/cache@v6
+        with:
+          path: ~/apt-archives
+          key: apt-${{ github.job }}-${{ steps.image.outputs.id }}-${{ hashFiles('.github/workflows/ci.yml', '.github/scripts/apt-install.sh') }}
+          restore-keys: apt-${{ github.job }}-${{ steps.image.outputs.id }}-
+
       # Bare apt-get has hung this step to the job timeout; the script bounds and
       # retries every stage of it.
       - name: Install Linux system dependencies
         timeout-minutes: 25
         run: |
-          bash .github/scripts/apt-install.sh \
+          APT_ARCHIVES="$HOME/apt-archives" bash .github/scripts/apt-install.sh \
             libgtk-3-dev \
             libglib2.0-dev \
             libgdk-pixbuf-2.0-dev \
