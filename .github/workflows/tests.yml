@@ -77,7 +77,7 @@ jobs:
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         # Same bounded, retrying install as ci.yml.
-        timeout-minutes: 20
+        timeout-minutes: 25
         run: |
           bash .github/scripts/apt-install.sh \
             libgtk-3-dev \

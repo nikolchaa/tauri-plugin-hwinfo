@@ -42,7 +42,7 @@ jobs:
   publish:
     name: cargo publish
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -57,7 +57,7 @@ jobs:
 
       # Same bounded, retrying install as ci.yml.
       - name: Install system dependencies
-        timeout-minutes: 20
+        timeout-minutes: 25
         run: |
           bash .github/scripts/apt-install.sh \
             libgtk-3-dev \
