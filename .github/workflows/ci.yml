@@ -7,6 +7,7 @@
 # What this catches before a tag ever reaches the publish workflows:
 #   - formatting and lint drift
 #   - a broken Linux build or a failing test
+#   - the crate no longer building on its declared `rust-version`
 #   - Android no longer compiling (no runner needed - `cargo check` only)
 #   - the TypeScript bindings no longer building
 
@@ -73,6 +74,44 @@ jobs:
       # receive, without publishing anything.
       - name: Package dry run
         run: cargo publish --dry-run --allow-dirty
+
+  # Builds on the oldest toolchain `rust-version` promises. Every other job uses
+  # stable, which is how the declared 1.82 drifted below sysinfo's 1.95 unseen.
+  # The version is read from Cargo.toml so a bump there can't skip this job.
+  msrv:
+    name: Linux - MSRV cargo check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read rust-version
+        id: msrv
+        run: echo "version=$(sed -n 's/^rust-version *= *"\(.*\)"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libglib2.0-dev \
+            libgdk-pixbuf-2.0-dev \
+            libwebkit2gtk-4.1-dev \
+            libdbus-1-dev \
+            pkg-config
+
+      - name: Check (all targets, all features)
+        run: cargo check --all-targets --all-features
+
+      - name: Check (no default features)
+        run: cargo check --lib --no-default-features
 
   android:
     name: Android - cargo check

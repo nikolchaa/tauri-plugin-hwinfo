@@ -11,7 +11,7 @@ homepage = "https://github.com/nikolchaa/tauri-plugin-hwinfo"
 readme = "README.md"
 keywords = ["tauri", "plugin", "hardware", "system", "diagnostics"]
 categories = ["development-tools", "os", "hardware-support"]
-rust-version = "1.82"
+rust-version = "1.95"
 links = "tauri-plugin-hwinfo"
 exclude = ["/dist-js", "/guest-js", "/node_modules", "/target", "/.github"]
 

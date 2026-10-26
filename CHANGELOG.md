@@ -5,6 +5,14 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `rust-version` claimed 1.82, but `sysinfo` 0.39 requires Rust 1.95, so older
+  toolchains failed inside the dependency instead of with a clear MSRV error.
+  The declared minimum is now 1.95.
+
 ## [1.0.0-alpha.2]
 
 Mobile reporting, CI that checks every platform the plugin targets, and
