@@ -10,6 +10,7 @@
 #   - the crate no longer building on its declared `rust-version`
 #   - Android no longer compiling (no runner needed - `cargo check` only)
 #   - the TypeScript bindings no longer building
+#   - the TypeScript types drifting from the serde output of the Rust models
 
 name: CI
 
@@ -67,8 +68,31 @@ jobs:
       - name: Clippy (no default features)
         run: cargo clippy --lib --no-default-features -- -D warnings
 
+      # Includes tests/contract.rs, which pins the fully populated fixtures in
+      # tests/contract/ to src/models.rs.
       - name: Tests
         run: cargo test --all-features
+
+      # The real scan proves the TypeScript types against actual output; the
+      # fixtures cover every field this runner leaves null or empty.
+      - name: Dump a real scan
+        run: |
+          mkdir -p target/contract
+          cargo run --quiet --all-features --example dump -- unsafe full > target/contract/scan.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: TypeScript types match the serde output
+        run: node tests/contract/check.mjs target/contract/scan.json
 
       # Proves the crate packages and builds from the tarball crates.io would
       # receive, without publishing anything.

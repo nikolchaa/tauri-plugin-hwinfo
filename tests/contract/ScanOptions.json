@@ -1,0 +1,5 @@
+{
+  "mode": "unsafe",
+  "detail": "capabilities",
+  "sections": ["cpu", "os"]
+}

@@ -1,0 +1,8 @@
+{
+  "ScanMode": ["safe", "unsafe"],
+  "DetailLevel": ["summary", "capabilities", "full"],
+  "Section": ["cpu", "gpu", "memory", "storage", "network", "display", "battery", "board", "os"],
+  "GpuKind": ["discrete", "integrated", "virtual", "cpu", "unknown"],
+  "DiskKind": ["hdd", "ssd", "unknown"],
+  "BatteryState": ["charging", "discharging", "empty", "full", "unknown"]
+}

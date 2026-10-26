@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   toolchains failed inside the dependency instead of with a clear MSRV error.
   The declared minimum is now 1.95.
 
+### CI
+
+- The TypeScript types in `guest-js/index.ts` are now checked against the serde
+  output of `src/models.rs` instead of being trusted to stay in sync by hand.
+  Fully populated fixtures in `tests/contract/` must round-trip through the
+  Rust types and type-check against the TypeScript ones, along with a real
+  `unsafe` / `full` scan from the Linux runner. A missing, extra or misspelt
+  field, a wrong type, or a union member one side lacks fails the `CI` workflow.
+
 ## [1.0.0-alpha.2]
 
 Mobile reporting, CI that checks every platform the plugin targets, and

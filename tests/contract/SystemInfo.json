@@ -1,0 +1,258 @@
+{
+  "scan": {
+    "version": 1,
+    "mode": "unsafe",
+    "detail": "full",
+    "sections": ["cpu", "gpu", "memory", "storage", "network", "display", "battery", "board", "os"],
+    "durationMs": 1250,
+    "timestamp": 1761475200,
+    "warnings": ["memory: SMBIOS is unreadable without root"]
+  },
+  "cpu": [
+    {
+      "manufacturer": "AuthenticAMD",
+      "model": "AMD Ryzen 9 5900X 12-Core Processor",
+      "architecture": "x86_64",
+      "physicalCores": 12,
+      "threads": 24,
+      "baseFrequency": 3700,
+      "maxFrequency": 4950,
+      "currentFrequency": 4100,
+      "socket": "AM4",
+      "family": 25,
+      "modelId": 33,
+      "stepping": 0,
+      "microcode": "0xa201205",
+      "cache": {
+        "l1dKb": 384,
+        "l1iKb": 384,
+        "l2Kb": 6144,
+        "l3Kb": 65536
+      },
+      "features": ["AVX", "AVX2", "SSE4.2"],
+      "virtualization": true,
+      "hypervisor": "KVM",
+      "simultaneousMultithreading": true,
+      "usagePercent": 12.5,
+      "temperatureC": 48.5,
+      "cores": [
+        {
+          "id": "cpu0",
+          "usagePercent": 25.0,
+          "frequency": 4100
+        }
+      ],
+      "serial": "CPU-SERIAL-0001"
+    }
+  ],
+  "gpu": [
+    {
+      "manufacturer": "Advanced Micro Devices, Inc.",
+      "model": "AMD Radeon RX 6950 XT",
+      "kind": "discrete",
+      "vendorId": 4098,
+      "vendorIdHex": "0x1002",
+      "deviceId": 29663,
+      "deviceIdHex": "0x73df",
+      "subsystemId": "0x0e3a1da2",
+      "revision": 192,
+      "vramMb": 16384,
+      "sharedMemoryMb": 32768,
+      "driverVersion": "31.0.24027.1012",
+      "driverDate": "2024-03-11",
+      "pciBus": "0000:0a:00.0",
+      "currentResolution": {
+        "width": 2560,
+        "height": 1440,
+        "refreshRateHz": 165.0
+      },
+      "api": {
+        "vulkan": true,
+        "vulkanVersion": "1.3.280",
+        "vulkanDriver": "AMD proprietary driver",
+        "cuda": true,
+        "cudaVersion": "12.4",
+        "computeCapability": "8.6",
+        "hip": true,
+        "hipVersion": "6.2.41134",
+        "rocmVersion": "6.2.4",
+        "gfxArchitecture": "gfx1030",
+        "directxFeatureLevel": "12_1",
+        "metal": true,
+        "opencl": true,
+        "openclVersion": "3.0",
+        "openglVersion": "4.6"
+      },
+      "uuid": "GPU-00000000-0000-0000-0000-000000000001"
+    }
+  ],
+  "memory": {
+    "totalMb": 32768,
+    "availableMb": 20480,
+    "usedMb": 12288,
+    "swapTotalMb": 8192,
+    "swapUsedMb": 512,
+    "modules": [
+      {
+        "slot": "DIMM 0",
+        "bank": "P0 CHANNEL A",
+        "manufacturer": "G.Skill",
+        "partNumber": "F4-3600C16-16GTZNC",
+        "capacityMb": 16384,
+        "speedMts": 3600,
+        "configuredSpeedMts": 3600,
+        "memoryType": "DDR4",
+        "formFactor": "DIMM",
+        "voltageMv": 1350,
+        "rank": 2,
+        "dataWidthBits": 64,
+        "totalWidthBits": 64,
+        "serial": "MEM-SERIAL-0001"
+      }
+    ],
+    "slotsTotal": 4,
+    "slotsUsed": 2
+  },
+  "storage": {
+    "disks": [
+      {
+        "device": "/dev/nvme0n1",
+        "model": "Samsung SSD 980 PRO 1TB",
+        "vendor": "Samsung",
+        "kind": "ssd",
+        "bus": "NVMe",
+        "sizeMb": 953869,
+        "firmwareRevision": "5B2QGXA7",
+        "isRemovable": false,
+        "partitionTable": "GPT",
+        "partitionCount": 3,
+        "serial": "DISK-SERIAL-0001"
+      }
+    ],
+    "volumes": [
+      {
+        "mountPoint": "/",
+        "name": "root",
+        "fileSystem": "ext4",
+        "totalMb": 476837,
+        "availableMb": 238418,
+        "usedMb": 238419,
+        "isRemovable": false,
+        "isReadOnly": false
+      }
+    ]
+  },
+  "network": [
+    {
+      "name": "eth0",
+      "description": "Intel(R) Ethernet Controller I225-V",
+      "state": "up",
+      "mtu": 1500,
+      "speedMbps": 2500,
+      "totalReceived": 123456789,
+      "totalTransmitted": 98765432,
+      "packetsReceived": 123456,
+      "packetsTransmitted": 98765,
+      "errorsReceived": 1,
+      "errorsTransmitted": 2,
+      "macAddress": "00:11:22:33:44:55",
+      "ipNetworks": ["192.168.1.42/24"]
+    }
+  ],
+  "display": [
+    {
+      "name": "eDP-1",
+      "manufacturer": "Dell Inc.",
+      "model": "DELL U2720Q",
+      "resolution": {
+        "width": 3840,
+        "height": 2160,
+        "refreshRateHz": 60.0
+      },
+      "nativeResolution": {
+        "width": 3840,
+        "height": 2160,
+        "refreshRateHz": 60.0
+      },
+      "scaleFactor": 1.5,
+      "positionX": -1920,
+      "positionY": 0,
+      "isPrimary": true,
+      "isInternal": false,
+      "bitsPerPixel": 32,
+      "physicalWidthMm": 597,
+      "physicalHeightMm": 336,
+      "diagonalInches": 27.0,
+      "manufactureYear": 2021,
+      "serial": "DISPLAY-SERIAL-0001"
+    }
+  ],
+  "battery": [
+    {
+      "vendor": "SMP",
+      "model": "5B10W13930",
+      "technology": "lithium-ion",
+      "state": "discharging",
+      "chargePercent": 87.5,
+      "healthPercent": 93.75,
+      "energyWh": 50.5,
+      "energyFullWh": 54.25,
+      "energyFullDesignWh": 57.0,
+      "energyRateW": -8.5,
+      "voltageV": 12.25,
+      "temperatureC": 31.5,
+      "cycleCount": 214,
+      "secondsToFull": 3600,
+      "secondsToEmpty": 21600,
+      "serial": "BATTERY-SERIAL-0001"
+    }
+  ],
+  "board": {
+    "manufacturer": "Gigabyte Technology Co., Ltd.",
+    "product": "X570 AORUS ELITE",
+    "version": "x.x",
+    "serial": "BOARD-SERIAL-0001",
+    "assetTag": "Default string",
+    "bios": {
+      "vendor": "American Megatrends International, LLC.",
+      "version": "F37c",
+      "releaseDate": "2024-01-30",
+      "mode": "UEFI",
+      "secureBootEnabled": true,
+      "smbiosVersion": "3.4"
+    },
+    "chassis": {
+      "manufacturer": "Default string",
+      "kind": "Desktop",
+      "version": "Default string",
+      "serial": "CHASSIS-SERIAL-0001"
+    },
+    "system": {
+      "manufacturer": "Gigabyte Technology Co., Ltd.",
+      "product": "X570 AORUS ELITE",
+      "version": "-CF",
+      "family": "X570 MB",
+      "sku": "Default string",
+      "uuid": "00000000-0000-0000-0000-000000000001",
+      "serial": "SYSTEM-SERIAL-0001"
+    }
+  },
+  "os": {
+    "name": "Ubuntu",
+    "family": "linux",
+    "version": "24.04",
+    "longVersion": "Ubuntu 24.04.1 LTS",
+    "kernelVersion": "6.8.0-45-generic",
+    "build": "45",
+    "edition": "LTS",
+    "codename": "noble",
+    "distributionId": "ubuntu",
+    "architecture": "x86_64",
+    "uptimeSecs": 86400,
+    "bootTimeSecs": 1761388800,
+    "virtualization": "KVM",
+    "hostname": "workstation",
+    "machineId": "00000000000000000000000000000001",
+    "user": "dev"
+  }
+}

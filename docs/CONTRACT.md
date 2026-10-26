@@ -4,7 +4,10 @@ Every field the plugin can return, what populates it, and when it is `null`.
 
 The canonical definitions live in [`guest-js/index.ts`](../guest-js/index.ts)
 and the Rust types in [`src/models.rs`](../src/models.rs); both carry the same
-documentation inline. This page is the flat, searchable view.
+documentation inline. This page is the flat, searchable view. CI holds the two
+together: the fixtures in [`tests/contract/`](../tests/contract/) must
+round-trip through the Rust types unchanged and type-check against the
+TypeScript ones.
 
 ## Reading the tables
 
